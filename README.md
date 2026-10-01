@@ -5,9 +5,11 @@ webhooks from EasyEcom, converts them into Gluzo's domain model, and hands
 them to a dropship fulfilment vendor through a resumable, retryable, fully
 traced workflow.
 
-The vendor side is a role-based abstraction (`app/vendor`). No vendor adapter
-is implemented yet; Vinculum eRetail is the first, see
-[docs/vinculum-integration-plan.md](docs/vinculum-integration-plan.md).
+The vendor side is a role-based abstraction (`app/vendor`). Vinculum eRetail,
+which BCPL run, implements all three vendor roles — orders, stock and dispatch.
+See [docs/vinculum-integration-plan.md](docs/vinculum-integration-plan.md) for
+the plan it was built to, and [docs/blockers.md](docs/blockers.md) for the
+external contracts still awaiting confirmation.
 
 ## Quick start
 
