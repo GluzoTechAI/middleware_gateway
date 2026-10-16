@@ -121,10 +121,22 @@ container recreation.
 
 ## Admin log viewer
 
-Set `ADMIN_LOG_VIEWER_TOKEN` to a long random value and open
-`https://<host>/admin/logs` with `Authorization: Bearer <token>`. The viewer
-must sit behind TLS; never expose it without the token. See
-[logging.md](logging.md) for the routes and filters.
+Set `ADMIN_LOG_VIEWER_TOKEN` to a long random value and restart the server.
+Open `https://<host>/admin/login` and enter that value to land on the admin
+homepage at `/admin`. Login and homepage templates are embedded in the server
+binary; no separate frontend build or database migration is needed.
+
+Browser sessions use the configured Redis connection and expire after eight
+hours. Sign out revokes the session immediately. The session cookie requires
+HTTPS; make sure the reverse proxy forwards `/admin` and `/admin/*` to the
+server. Keep the same admin token across replicas. Changing it requires
+restarting all replicas and invalidates their previous authenticated sessions.
+Login permits ten attempts per client IP per five minutes; with the current
+untrusted-proxy configuration, users behind the proxy share that limit.
+
+Postman and curl can still use `Authorization: Bearer <token>` or
+`X-Admin-Token: <token>`. See [logging.md](logging.md) for routes and filters,
+and [admin-panel-plan.md](admin-panel-plan.md) for the two delivery phases.
 
 ## Production notes
 

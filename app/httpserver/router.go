@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/gluzo/integration-gateway/app/admin"
 	"github.com/gluzo/integration-gateway/app/auth"
@@ -33,6 +34,8 @@ type Dependencies struct {
 	// a token are configured.
 	Admin      *admin.Handler
 	AdminToken string
+	// AdminSessions enables Redis-backed browser login when supplied.
+	AdminSessions redis.UniversalClient
 }
 
 // NewRouter builds the HTTP routing table with the shared middleware chain.
@@ -72,7 +75,11 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	}
 
 	if deps.Admin != nil && strings.TrimSpace(deps.AdminToken) != "" {
-		deps.Admin.Register(r.Group("/admin", auth.RequireAdminToken(deps.AdminToken, deps.Logger)))
+		if deps.AdminSessions != nil {
+			admin.NewBrowserAuth(deps.Admin, deps.AdminSessions, deps.AdminToken).Register(r.Group("/admin"))
+		} else {
+			deps.Admin.Register(r.Group("/admin", auth.RequireAdminToken(deps.AdminToken, deps.Logger)))
+		}
 	}
 
 	r.NoRoute(func(c *gin.Context) {

@@ -87,6 +87,11 @@ prunes old logs.
 
 ## Operate
 
+For browser access, open `https://<host>/admin/login` and enter the configured
+`ADMIN_LOG_VIEWER_TOKEN`. Successful sign-in opens `/admin`; sessions use Redis
+and expire after eight hours. HTTPS is required. See the
+[admin panel plan](docs/admin-panel-plan.md) for Phase 1 and Phase 2 scope.
+
 ```bash
 # search the execution log and view a timeline
 curl -H "Authorization: Bearer $ADMIN_LOG_VIEWER_TOKEN" "http://localhost:8080/admin/logs/search?external_order_id=9876543"
