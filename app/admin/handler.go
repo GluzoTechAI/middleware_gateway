@@ -90,12 +90,19 @@ func NewHandler(reader *intlog.Reader, states workflow.Repository, resumer Resum
 
 // Register mounts the routes on g, which the router has already protected.
 func (h *Handler) Register(g *gin.RouterGroup) {
+	g.GET("", h.Home)
+	g.GET("/", h.Home)
 	g.GET("/logs", h.Logs)
 	g.GET("/logs/search", h.Search)
 	g.GET("/logs/:correlationId", h.Timeline)
 	g.GET("/workflows/:correlationId", h.Workflow)
 	g.POST("/workflows/:correlationId/resume", h.Resume)
 	g.GET("/reconcile", h.Reconcile)
+}
+
+// Home is the browser's landing page after authentication.
+func (h *Handler) Home(c *gin.Context) {
+	h.render(c, "home.html", gin.H{})
 }
 
 // Reconcile lists runs that are not progressing.
@@ -384,9 +391,15 @@ func (h *Handler) Resume(c *gin.Context) {
 }
 
 func (h *Handler) render(c *gin.Context, name string, data gin.H) {
+	h.renderStatus(c, http.StatusOK, name, data)
+}
+
+func (h *Handler) renderStatus(c *gin.Context, status int, name string, data gin.H) {
+	data["CSRFToken"] = c.GetString(adminCSRFKey)
+	data["BrowserAuthenticated"] = c.GetString(adminSessionIDKey) != ""
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	c.Header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
-	c.Status(http.StatusOK)
+	c.Status(status)
 	if err := h.tmpl.ExecuteTemplate(c.Writer, name, data); err != nil {
 		h.logger.ErrorContext(c.Request.Context(), "admin template failed", slog.String("template", name), slog.String("error", err.Error()))
 	}

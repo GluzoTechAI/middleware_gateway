@@ -14,6 +14,10 @@ tmp/
 # Build and test artifacts
 bin/
 dist/
+# `go build ./cmd/devstack` at the repo root writes devstack.exe beside the
+# source rather than into bin/, and it is 32 MB. Ignored by extension so no
+# blanket `git add` can commit it.
+*.exe
 coverage.out
 *.test
 *.out

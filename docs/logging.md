@@ -87,11 +87,19 @@ at any time.
 ## Admin log viewer
 
 Mounted under `/admin` only when `ADMIN_LOG_VIEWER_TOKEN` is set. Every
-request needs `Authorization: Bearer <token>` (or `X-Admin-Token`); the token
-is compared in constant time and responses are never cached.
+request needs an authenticated browser session or `Authorization: Bearer
+<token>` (or `X-Admin-Token`). Open `/admin/login` over HTTPS and enter the
+admin token to start an eight-hour Redis-backed session. After sign-in,
+`/admin` shows the homepage. Cookie-authenticated POST requests require the
+CSRF token included in the page's forms, or the `X-CSRF-Token` header.
+Header-authenticated API requests remain compatible. Responses are never cached.
 
 | Route | Purpose |
 | --- | --- |
+| `GET /admin/login` | Browser sign-in page |
+| `POST /admin/login` | Sign in and redirect to `/admin` |
+| `GET /admin` | Authenticated homepage |
+| `POST /admin/logout` | Revoke the browser session and return to sign-in |
 | `GET /admin/logs` | Search page (HTML); add `format=json` for JSON |
 | `GET /admin/logs/search` | JSON search |
 | `GET /admin/logs/:correlationId` | Chronological timeline with the workflow state (HTML, or JSON with `format=json`) |

@@ -4,8 +4,8 @@
 
 The Gluzo Integration Gateway receives order events from an origin platform
 (today: EasyEcom), converts them into Gluzo's own domain model, and hands the
-result to a dropship fulfilment vendor. No vendor adapter is implemented yet;
-Vinculum eRetail is the first, see
+result to a dropship fulfilment vendor. Vinculum eRetail, which BCPL run,
+implements all three vendor roles; see
 [vinculum-integration-plan.md](vinculum-integration-plan.md).
 
 It is an integration *engine* built for one production use case. The

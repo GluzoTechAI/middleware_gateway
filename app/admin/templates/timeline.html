@@ -1,4 +1,5 @@
 {{template "head" "Timeline"}}
+{{template "nav" .}}
 <p><a href="/admin/logs">← Search</a></p>
 <h1>Correlation <code>{{.View.CorrelationID}}</code></h1>
 {{with .View.State}}
@@ -31,7 +32,7 @@
 </table>
 </div>
 {{if $.View.CanResume}}
-<form method="post" action="/admin/workflows/{{.CorrelationID}}/resume"><button type="submit">Resume from {{.NextAction}}</button></form>
+<form method="post" action="/admin/workflows/{{.CorrelationID}}/resume"><input type="hidden" name="_csrf" value="{{$.CSRFToken}}"><button type="submit">Resume from {{.NextAction}}</button></form>
 {{end}}
 {{end}}
 <h2>Execution log</h2>

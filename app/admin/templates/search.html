@@ -1,4 +1,5 @@
 {{template "head" "Integration logs"}}
+{{template "nav" .}}
 <h1>Integration logs</h1>
 <form class="search" method="get" action="/admin/logs">
   <label>Correlation ID <input name="correlation_id" value="{{.Form.CorrelationID}}" placeholder="INT-…"></label>

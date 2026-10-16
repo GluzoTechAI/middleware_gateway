@@ -28,9 +28,29 @@
   dt { color: var(--muted); }
   dd { margin: 0; }
   code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  main { max-width: 1100px; margin: 32px auto; }
+  .admin-nav { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; padding: 0 0 16px; border-bottom: 1px solid var(--line); margin-bottom: 24px; }
+  .admin-nav form { margin-left: auto; }
+  .eyebrow { color: var(--muted); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; }
+  .login-panel { max-width: 380px; margin: 10vh auto; padding: 28px; border: 1px solid var(--line); border-radius: 12px; }
+  .login-form { display: flex; flex-direction: column; gap: 12px; margin-top: 24px; }
+  .login-form input[type="password"] { padding: 10px; border: 1px solid var(--line); border-radius: 6px; font: inherit; }
+  .home-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 28px; }
+  .home-card { display: block; padding: 20px; border: 1px solid var(--line); border-radius: 10px; text-decoration: none; }
+  .home-card:hover { border-color: var(--ok); }
+  .home-card h2 { margin-top: 0; }
+  .home-card p { color: var(--muted); }
 </style>
 </head>
 <body>{{end}}
+{{define "nav"}}
+<nav class="admin-nav" aria-label="Admin navigation">
+  <a href="/admin">Home</a>
+  <a href="/admin/logs?platform=easyecom">Events and workflows</a>
+  <a href="/admin/reconcile">Stuck runs</a>
+  {{if .BrowserAuthenticated}}<form method="post" action="/admin/logout"><input type="hidden" name="_csrf" value="{{.CSRFToken}}"><button type="submit">Sign out</button></form>{{end}}
+</nav>
+{{end}}
 {{define "foot"}}
 <p class="muted">Times are UTC. Entries are append-only; retries appear as separate lines.</p>
 </body>

@@ -1,0 +1,13 @@
+{{template "head" "Admin home"}}
+{{template "nav" .}}
+<main>
+  <p class="eyebrow">Gluzo Integration Gateway</p>
+  <h1>Admin home</h1>
+  <p class="muted">Review incoming events, follow workflow progress, and investigate failures.</p>
+  <div class="home-grid">
+    <a class="home-card" href="/admin/logs?platform=easyecom"><h2>Events and workflows</h2><p>Search order events and open their execution timelines.</p></a>
+    <a class="home-card" href="/admin/logs?errors_only=true"><h2>Failed actions</h2><p>Inspect errors, retry attempts, and vendor responses recorded in the logs.</p></a>
+    <a class="home-card" href="/admin/reconcile"><h2>Stuck runs</h2><p>Find workflows that are no longer progressing and inspect their last action.</p></a>
+  </div>
+</main>
+{{template "foot"}}

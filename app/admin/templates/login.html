@@ -1,0 +1,17 @@
+{{template "head" "Admin sign in"}}
+<main class="login-panel">
+  <p class="eyebrow">Gluzo Integration Gateway</p>
+  <h1>Admin sign in</h1>
+  <p class="muted">Sign in to review events and workflow activity.</p>
+  {{if .Problem}}<p class="problem" role="alert">{{.Problem}}</p>{{end}}
+  {{if .LoginCSRF}}
+  <form method="post" action="/admin/login" class="login-form">
+    <input type="hidden" name="_csrf" value="{{.LoginCSRF}}">
+    <label for="admin-token">Admin token</label>
+    <input id="admin-token" name="token" type="password" autocomplete="current-password" required autofocus>
+    <button type="submit">Sign in</button>
+  </form>
+  {{else}}<p><a href="/admin/login">Return to sign in</a></p>{{end}}
+</main>
+</body>
+</html>

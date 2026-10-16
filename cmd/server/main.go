@@ -282,14 +282,15 @@ func run() error {
 		redisconn.Checker{Client: rdb},
 	)
 	router := httpserver.NewRouter(httpserver.Dependencies{
-		Logger:       logger,
-		Health:       healthHandler,
-		MaxBodyBytes: cfg.HTTP.MaxBodyBytes,
-		PlatformKeys: credentials,
-		AccessTokens: credentials,
-		Webhooks:     []*webhook.Handler{easyecomWebhook},
-		Admin:        adminHandler,
-		AdminToken:   cfg.Admin.LogViewerToken,
+		Logger:        logger,
+		Health:        healthHandler,
+		MaxBodyBytes:  cfg.HTTP.MaxBodyBytes,
+		PlatformKeys:  credentials,
+		AccessTokens:  credentials,
+		Webhooks:      []*webhook.Handler{easyecomWebhook},
+		Admin:         adminHandler,
+		AdminToken:    cfg.Admin.LogViewerToken,
+		AdminSessions: rdb,
 	})
 	srv := httpserver.New(cfg.App.Port, cfg.HTTP, router)
 
