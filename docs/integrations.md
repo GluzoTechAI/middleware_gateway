@@ -66,6 +66,12 @@ object, and all three decode into the same `OrdersData`.
 
 ### Webhooks
 
+Observed compatibility: V1 location-assignment callbacks can use `warehouseId`
+instead of `warehouse_id`. The shared order DTO accepts either spelling and
+normalizes it for webhook routing and order mapping. If both are populated
+with different values, the payload is rejected rather than routed ambiguously.
+`import_warehouse_id` is a separate location and is not used as a fallback.
+
 Facts from EasyEcom's support documentation ("Webhook configuration",
 "Outbound Webhooks - Handling Invalid Responses"):
 

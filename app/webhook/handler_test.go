@@ -207,6 +207,31 @@ func TestDuplicateWebhookIsNotQueuedTwice(t *testing.T) {
 	}
 }
 
+func TestLocationAssignmentWebhookAcceptedAndQueued(t *testing.T) {
+	e := newEnv(t)
+	// Reduced from the observed V1 callback: assigned and import locations
+	// differ. Routing must use warehouseId and preserve the original payload.
+	payload := `{"orders":[{"order_id":648939753,"invoice_id":774569225,"reference_code":"TEST-100032","warehouseId":304788,"import_warehouse_id":304643,"suborders":[{"sku":"142296","suborder_quantity":1}]}],"nextUrl":null}`
+	headers := map[string]string{"Access-Token": platformKey + ":" + accessToken}
+	w := e.post("/webhooks/easyecom/order-created", payload, headers)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, body %s", w.Code, w.Body.String())
+	}
+	var ev event.Event
+	if err := json.Unmarshal(e.nextJob(t).Payload, &ev); err != nil {
+		t.Fatal(err)
+	}
+	if ev.ExternalOrderID != "648939753" || ev.RoutingKey.Value != "304788" || ev.RoutingKey.Type != "warehouse_id" {
+		t.Fatalf("incorrect location-assignment routing: %+v", ev.RoutingKey)
+	}
+	if !strings.Contains(string(ev.Payload), `"warehouseId":304788`) {
+		t.Fatal("original webhook payload was modified")
+	}
+	if duplicate := e.post("/webhooks/easyecom/order-created", payload, headers); duplicate.Code != http.StatusOK || decode(t, duplicate)["status"] != "duplicate" {
+		t.Fatalf("duplicate response: %d %s", duplicate.Code, duplicate.Body.String())
+	}
+}
+
 func TestEventTypeFromPathAndBatches(t *testing.T) {
 	e := newEnv(t)
 	batch := `[{"order_id":1,"warehouse_id":5},{"order_id":2,"warehouse_id":5}]`

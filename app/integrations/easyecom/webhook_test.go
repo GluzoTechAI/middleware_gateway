@@ -38,6 +38,13 @@ func TestWebhookParserOrderEvents(t *testing.T) {
 			wantKeys:  []string{"easyecom:ORDER_CONFIRMED:7"},
 		},
 		{
+			name:      "v1 assignment camel warehouse",
+			eventType: event.OrderCreated,
+			body:      `{"orders":[{"order_id":7,"warehouseId":304788,"import_warehouse_id":304643,"suborders":[]}],"nextUrl":null}`,
+			wantIDs:   []string{"7"},
+			wantKeys:  []string{"easyecom:ORDER_CREATED:7"},
+		},
+		{
 			name:      "single object falls back to invoice id",
 			eventType: event.OrderCancelled,
 			body:      `{"order_id":"","invoice_id":"INV-9","warehouse_id":3}`,
@@ -103,6 +110,8 @@ func TestWebhookParserRejections(t *testing.T) {
 		{"malformed json", event.OrderCreated, `[{"order_id":1,`, "not an EasyEcom order webhook"},
 		{"missing identifiers", event.OrderCreated, `[{"warehouse_id":1}]`, "neither order_id nor invoice_id"},
 		{"missing warehouse", event.OrderCreated, `[{"order_id":1}]`, "no warehouse_id"},
+		{"import warehouse alone", event.OrderCreated, `[{"order_id":1,"import_warehouse_id":304643}]`, "no warehouse_id"},
+		{"conflicting warehouses", event.OrderCreated, `[{"order_id":1,"warehouse_id":304643,"warehouseId":304788}]`, "conflicting warehouse_id and warehouseId"},
 		{"bad field type", event.OrderCreated, `[{"order_id":{"x":1},"warehouse_id":1}]`, "order 0"},
 	}
 	for _, tt := range tests {

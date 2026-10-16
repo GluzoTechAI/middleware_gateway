@@ -4,10 +4,47 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gluzo/integration-gateway/app/integrations/easyecom/dto/order"
 )
+
+func TestOrderWarehouseSpellings(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		body string
+		want string
+	}{
+		{"snake numeric", `{"order_id":1,"warehouse_id":304788}`, "304788"},
+		{"camel numeric", `{"order_id":1,"warehouseId":304788}`, "304788"},
+		{"camel string", `{"order_id":"1","warehouseId":"304788"}`, "304788"},
+		{"both agree", `{"order_id":1,"warehouse_id":"304788","warehouseId":304788}`, "304788"},
+		{"blank snake", `{"order_id":1,"warehouse_id":" ","warehouseId":304788}`, "304788"},
+		{"null snake", `{"order_id":1,"warehouse_id":null,"warehouseId":304788}`, "304788"},
+		{"assigned warehouse differs from import", `{"order_id":1,"warehouseId":304788,"import_warehouse_id":304643}`, "304788"},
+		{"import alone is not a warehouse alias", `{"order_id":1,"import_warehouse_id":304643}`, ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var o order.Order
+			if err := json.Unmarshal([]byte(tt.body), &o); err != nil {
+				t.Fatal(err)
+			}
+			if strings.TrimSpace(o.WarehouseID.String()) != tt.want || o.OrderID != "1" {
+				t.Fatalf("order identifiers: order=%q warehouse=%q", o.OrderID, o.WarehouseID)
+			}
+		})
+	}
+	for _, body := range []string{
+		`{"order_id":1,"warehouse_id":304643,"warehouseId":304788}`,
+		`{"order_id":1,"warehouseId":{"id":304788}}`,
+	} {
+		var o order.Order
+		if err := json.Unmarshal([]byte(body), &o); err == nil {
+			t.Fatalf("ambiguous or malformed warehouse accepted: %s", body)
+		}
+	}
+}
 
 func fixture(t *testing.T, name string) []byte {
 	t.Helper()

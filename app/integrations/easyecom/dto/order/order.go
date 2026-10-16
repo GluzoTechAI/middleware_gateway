@@ -16,7 +16,7 @@ type Order struct {
 	OrderID       dto.FlexString `json:"order_id"`
 	ReferenceCode dto.FlexString `json:"reference_code"`
 	CompanyName   string         `json:"company_name"`
-	WarehouseID   dto.FlexString `json:"warehouse_id"`
+	WarehouseID   dto.FlexString `json:"warehouse_id"` // Also accepts warehouseId on decode.
 	OrderStatus   string         `json:"order_status"`
 	OrderStatusID dto.FlexString `json:"order_status_id"`
 	OrderDate     string         `json:"order_date"`  // VERIFY
