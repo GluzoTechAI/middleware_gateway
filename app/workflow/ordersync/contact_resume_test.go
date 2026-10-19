@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gluzo/integration-gateway/app/apperror"
 	"github.com/gluzo/integration-gateway/app/domain/order"
@@ -21,7 +22,7 @@ import (
 type shippingGuardVendor struct{ fakeVendor }
 
 func (v *shippingGuardVendor) PrepareOrder(_ context.Context, o order.Order, route vendor.Route) (json.RawMessage, error) {
-	req, err := vinculummapper.ToCreateOrder(o, route, vinculummapper.OrderOptions{})
+	req, err := vinculummapper.ToCreateOrder(o, route, vinculummapper.OrderOptions{PrepaidOrderType: "Prepaid", PrepaidPaymentType: "Credit Card", InitialStatus: "Confirmed", Timezone: "Asia/Kolkata"})
 	if err != nil {
 		return nil, err
 	}
@@ -56,11 +57,11 @@ func TestSavedMapOrderResumesWithWebhookContactsWithoutRefetch(t *testing.T) {
 			}
 			st := f.state("12345")
 			st.Event.ExternalOrderID = "652462545"
-			st.Event.Payload = []byte(`{"order_id":652462545,"customer_name":"Test Customer","address_line_1":"123 Test Street","contact_num":"9999999999","city":"Noida","state":"Uttar Pradesh","pin_code":"201301","country":"India"}`)
+			st.Event.Payload = []byte(`{"order_id":652462545,"customer_name":"Test Customer","email":"test@example.com","address_line_1":"123 Test Street","contact_num":"9999999999","city":"Noida","state":"Uttar Pradesh","pin_code":"201301","country":"India"}`)
 			if !matchingWebhook {
 				st.Event.Payload = []byte(strings.ReplaceAll(string(st.Event.Payload), "652462545", "999"))
 			}
-			st.Order = &order.Order{ExternalID: "652462545", WarehouseID: "304643", PaymentMode: order.PaymentPrepaid, TotalAmount: 1049,
+			st.Order = &order.Order{ExternalID: "652462545", WarehouseID: "304643", PaymentMode: order.PaymentPrepaid, TotalAmount: 1049, OrderedAt: time.Date(2026, 10, 19, 10, 0, 0, 0, time.UTC), Currency: "INR",
 				ShippingAddress: order.Address{City: "Noida", State: "Uttar Pradesh", PostalCode: "201301", Country: "India"},
 				Items:           []order.Item{{SKU: "A", Quantity: 1, UnitPrice: 1049}},
 			}
@@ -97,11 +98,12 @@ func TestSavedMapOrderResumesWithWebhookContactsWithoutRefetch(t *testing.T) {
 			if err := json.Unmarshal(v.submitted, &document); err != nil {
 				t.Fatal(err)
 			}
-			if document["orderNo"] != "652462545" || document["shipTo"] != "Test Customer" || document["shipAddress1"] != "123 Test Street" || document["shipMobile"] != "9999999999" {
+			document = document["order"].(map[string]any)
+			if document["orderNo"] != "652462545" || document["customerName"] != "Test Customer" || document["shipAddress1"] != "123 Test Street" || document["shipPhone1"] != "9999999999" {
 				t.Fatalf("prepared shipping fields: %s", v.submitted)
 			}
-			line := document["orderAmount"].([]any)[0].(map[string]any)
-			if line["sku"] != "BCPL-A" || line["unitPrice"] != float64(1049) || line["orderQty"] != float64(1) {
+			line := document["items"].([]any)[0].(map[string]any)
+			if line["sku"] != "BCPL-A" || line["unitPrice"] != "1049" || line["orderQty"] != "1" {
 				t.Fatalf("order lines changed: %+v", line)
 			}
 			saved, err := f.repo.Get(ctx, st.CorrelationID)

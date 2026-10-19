@@ -3,35 +3,31 @@ package mapper
 import (
 	"strings"
 	"time"
+	_ "time/tzdata" // Distroless images have no system timezone database.
 
 	"github.com/gluzo/integration-gateway/app/domain/order"
-	"github.com/gluzo/integration-gateway/app/integrations/vinculum/dto"
 	dtoorder "github.com/gluzo/integration-gateway/app/integrations/vinculum/dto/order"
 	"github.com/gluzo/integration-gateway/app/vendor"
 )
 
-// Vinculum order types and payment types.
-//
-// TODO(VERIFY): the specification names orderType and paymentType as header
-// fields without enumerating their values. These follow Vinculum's
-// conventions and are sent only because omitting a documented field is the
-// less safe guess; both are one constant each.
-const (
-	OrderTypeSale      = "SALE"
-	PaymentTypeCOD     = "COD"
-	PaymentTypePrepaid = "PREPAID"
-	StatusNew          = "NEW"
-)
-
-// DefaultCurrency is used when the origin platform carries none. EasyEcom's
-// order payload does not include a currency.
+// DefaultCurrency preserves the gateway's INR fallback when the origin omits currency.
 const DefaultCurrency = "INR"
 
 // OrderOptions tunes an order mapping.
+// TODO(VERIFY): obtain the tenant's ODRTYPE/ODRSTS values, payment methods and
+// timezone from BCPL. Public examples establish no production defaults.
 type OrderOptions struct {
 	// VendorName is stamped on each line's `vendor` field where the
 	// deployment uses it. Empty omits it.
-	VendorName string
+	VendorName         string
+	PrepaidOrderType   string
+	CODOrderType       string
+	PrepaidPaymentType string
+	CODPaymentType     string
+	InitialStatus      string
+	Timezone           string
+	Mode               string
+	TaxInclusive       string
 }
 
 // ToCreateOrder converts a domain order into Vinculum's create-order
@@ -46,6 +42,22 @@ type OrderOptions struct {
 // integration's SKU map, which is configuration a pure mapper cannot load;
 // the workflow does it before calling.
 func ToCreateOrder(o order.Order, route vendor.Route, opts OrderOptions) (dtoorder.CreateOrderRequest, error) {
+	var orderType, paymentMethod string
+	switch o.PaymentMode {
+	case order.PaymentCashOnDelivery:
+		orderType, paymentMethod = opts.CODOrderType, opts.CODPaymentType
+	case order.PaymentPrepaid:
+		orderType, paymentMethod = opts.PrepaidOrderType, opts.PrepaidPaymentType
+	default:
+		return dtoorder.CreateOrderRequest{}, mappingErrorf("order %s: payment mode must be known before selecting Vinculum master values", o.ExternalID)
+	}
+	if strings.TrimSpace(orderType) == "" || strings.TrimSpace(paymentMethod) == "" || strings.TrimSpace(opts.InitialStatus) == "" {
+		return dtoorder.CreateOrderRequest{}, mappingErrorf("order %s: configure VINCULUM_ORDER_TYPE_PREPAID/COD, VINCULUM_PAYMENT_TYPE_PREPAID/COD for its payment mode and VINCULUM_ORDER_STATUS with confirmed tenant values", o.ExternalID)
+	}
+	date, err := FormatOrderDate(o.OrderedAt, opts.Timezone)
+	if err != nil {
+		return dtoorder.CreateOrderRequest{}, err
+	}
 	req := dtoorder.CreateOrderRequest{
 		// Gluzo's own order id becomes Vinculum's order number. Vinculum
 		// rejecting a duplicate is what makes submission idempotent, so this
@@ -53,11 +65,13 @@ func ToCreateOrder(o order.Order, route vendor.Route, opts OrderOptions) (dtoord
 		// identity, not a generated reference.
 		OrderNo:       strings.TrimSpace(o.ExternalID),
 		OrderLocation: strings.TrimSpace(route.VendorReference),
-		OrderType:     OrderTypeSale,
-		PaymentType:   paymentType(o),
-		Status:        StatusNew,
-		OrderDate:     FormatOrderDate(o.OrderedAt),
+		ReqType:       "create",
+		OrderType:     strings.TrimSpace(orderType),
+		PaymentType:   strings.TrimSpace(paymentMethod),
+		Status:        strings.TrimSpace(opts.InitialStatus),
+		OrderDate:     date,
 		OrderCurrency: currency(o),
+		OrderAmount:   o.TotalAmount,
 	}
 
 	ship := shippingAddress(o)
@@ -66,12 +80,22 @@ func ToCreateOrder(o order.Order, route vendor.Route, opts OrderOptions) (dtoord
 	req.ShipAddress2 = strings.TrimSpace(ship.Line2)
 	req.ShipCity = strings.TrimSpace(ship.City)
 	req.ShipState = strings.TrimSpace(ship.State)
-	req.ShipCountry = firstNonEmpty(ship.Country, "India")
+	req.ShipCountry = strings.TrimSpace(ship.Country)
 	req.ShipPincode = strings.TrimSpace(ship.PostalCode)
 	req.ShipMobile = firstNonEmpty(ship.Phone, o.Customer.Phone)
 	req.ShipEmail = firstNonEmpty(ship.Email, o.Customer.Email)
+	bill := o.BillingAddress
+	if bill.IsEmpty() {
+		bill = ship
+	}
+	req.BillName = firstNonEmpty(bill.Name, o.Customer.Name)
+	req.BillAddress, req.BillAddress2 = strings.TrimSpace(bill.Line1), strings.TrimSpace(bill.Line2)
+	req.BillCity, req.BillState = strings.TrimSpace(bill.City), strings.TrimSpace(bill.State)
+	req.BillCountry = strings.TrimSpace(bill.Country)
+	req.BillPincode = strings.TrimSpace(bill.PostalCode)
+	req.BillMobile, req.BillEmail = firstNonEmpty(bill.Phone, o.Customer.Phone), firstNonEmpty(bill.Email, o.Customer.Email)
 
-	req.OrderAmount = make([]dtoorder.Line, 0, len(o.Items))
+	req.Items = make([]dtoorder.Line, 0, len(o.Items))
 	for i, item := range o.Items {
 		line := dtoorder.Line{
 			// Line numbers are one-based and assigned by position. They are
@@ -84,42 +108,48 @@ func ToCreateOrder(o order.Order, route vendor.Route, opts OrderOptions) (dtoord
 			DiscountAmt:   item.Discount,
 			TaxPercentage: item.TaxRate,
 			Vendor:        strings.TrimSpace(opts.VendorName),
+			Mode:          strings.TrimSpace(opts.Mode),
+			TaxInclusive:  strings.TrimSpace(opts.TaxInclusive),
 			// The origin's line identifier travels in a user-defined field
 			// so a dispatch can be traced back to the EasyEcom suborder
 			// without another lookup.
 			UDF1: strings.TrimSpace(item.ExternalID),
 		}
-		// The origin carries no MRP. Sending zero would read as "free" on a
-		// customer-facing document, so the unit price stands in.
-		line.MRP = item.UnitPrice
-		req.OrderAmount = append(req.OrderAmount, line)
+		// Omit optional MRP: selling price does not establish an actual MRP.
+		req.Items = append(req.Items, line)
 	}
 
-	if err := req.Validate(); err != nil {
-		return dtoorder.CreateOrderRequest{}, mappingErrorf("order %s: %v", o.ExternalID, err)
-	}
 	if err := checkShippable(o, req); err != nil {
 		return dtoorder.CreateOrderRequest{}, err
+	}
+	if err := req.Validate(); err != nil {
+		return dtoorder.CreateOrderRequest{}, mappingErrorf("order %s: %v", o.ExternalID, err)
 	}
 	return req, nil
 }
 
 // FormatOrderDate renders an order timestamp for Vinculum.
 //
-// TODO(VERIFY): shares RequestTimeLayout with the read endpoints, which is
-// itself unconfirmed (BCPL open item B11). A zero time renders empty rather
-// than as the zero date, because a 1-January-0001 order would be accepted and
-// then be wrong forever.
-func FormatOrderDate(t time.Time) string { return dto.FormatTime(t) }
+// TODO(VERIFY): confirm the configured timezone with the tenant. The official
+// example establishes the representation, not a timezone. Read endpoint dates
+// retain their independent formatter.
+func FormatOrderDate(t time.Time, zone string) (string, error) {
+	if t.IsZero() {
+		return "", mappingErrorf("orderDate is required")
+	}
+	zone = strings.TrimSpace(zone)
+	if zone == "" {
+		return "", mappingErrorf("configure VINCULUM_ORDER_TIMEZONE with the confirmed order timezone")
+	}
+	loc, err := time.LoadLocation(zone)
+	if err != nil {
+		return "", mappingErrorf("invalid VINCULUM_ORDER_TIMEZONE %q", zone)
+	}
+	return t.In(loc).Format(dtoorder.OrderDateLayout), nil
+}
 
-// requiredShippingFields are the fields an order cannot be dispatched
-// without.
-//
-// This is the gateway's own guard, not a documented Vinculum constraint: the
-// specification does not say which address fields are mandatory. Checking
-// here turns "shipped to an incomplete address" — which nobody notices until
-// a customer complains — into a mapping failure naming the field, which is
-// permanent and therefore visible.
+// checkShippable preserves readable shipping errors; DTO validation also checks
+// the documented conditional billing, country and email requirements.
 func checkShippable(o order.Order, req dtoorder.CreateOrderRequest) error {
 	missing := make([]string, 0, 6)
 	for _, f := range []struct {
@@ -144,13 +174,6 @@ func checkShippable(o order.Order, req dtoorder.CreateOrderRequest) error {
 		o.ExternalID, strings.Join(missing, ", "))
 }
 
-func paymentType(o order.Order) string {
-	if o.IsCashOnDelivery() {
-		return PaymentTypeCOD
-	}
-	return PaymentTypePrepaid
-}
-
 func currency(o order.Order) string {
 	if v := strings.TrimSpace(o.Currency); v != "" {
 		return v
@@ -160,7 +183,7 @@ func currency(o order.Order) string {
 
 // shippingAddress prefers the shipping address and falls back to billing.
 // An order that carries only one address is ordinary: EasyEcom's payload
-// carries a single address used for both.
+// can omit a separate billing address.
 func shippingAddress(o order.Order) order.Address {
 	if !o.ShippingAddress.IsEmpty() {
 		return o.ShippingAddress

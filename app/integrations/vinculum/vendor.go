@@ -150,7 +150,9 @@ func (v *Vendor) PrepareOrder(_ context.Context, o order.Order, route vendor.Rou
 	if err := route.Validate(); err != nil {
 		return nil, apperror.Wrap(apperror.Validation, "incomplete route", err)
 	}
-	req, err := mapper.ToCreateOrder(o, route, mapper.OrderOptions{VendorName: v.vendorName})
+	settings := v.client.cfg.OrderOptions
+	settings.VendorName = v.vendorName
+	req, err := mapper.ToCreateOrder(o, route, settings)
 	if err != nil {
 		return nil, err
 	}
@@ -191,10 +193,7 @@ func (v *Vendor) SubmitOrder(ctx context.Context, prepared json.RawMessage, o or
 
 	id := resp.VendorOrderNo()
 	if id == "" {
-		// Vinculum reported success without echoing an identifier. The
-		// order is known by the number we sent, which is Gluzo's own order
-		// id, so that is the honest answer rather than an error.
-		id = req.OrderNo
+		return vendor.OrderAck{}, apperror.New(apperror.ExternalAPI, "Vinculum acknowledgement has no outputKey or dsOrderNo")
 	}
 	return vendor.OrderAck{VendorOrderID: id, Created: true}, nil
 }

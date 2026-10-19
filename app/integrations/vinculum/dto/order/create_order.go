@@ -1,167 +1,196 @@
-// Package order holds the Vinculum order contracts.
-//
-// Source: the live Vinculum eRetail specification for
-// POST /RestWS/api/eretail/v4/order/create, read 29 September 2026. The
-// header and line field names below are taken from it.
-//
-// TODO(VERIFY): the specification names "the ship* address block" without
-// enumerating its members. The nine ship fields below follow the documented
-// prefix and Vinculum's conventions elsewhere; they are NOT confirmed and are
-// listed in docs/blockers.md. A wrong address field name is the one mistake
-// here that fails quietly — Vinculum would accept the order and ship it with
-// a field missing — so these must be confirmed before any live order.
+// Package order holds Vinculum order contracts. Source: official v4 parameter
+// table and JSON example reviewed 19 October 2026; see the contract review.
+// TODO(VERIFY): tenant acceptance and address persistence still require a
+// recorded test order. Documentation alignment does not close BCPL item B17.
 package order
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
+	"time"
+	"unicode/utf8"
 
 	"github.com/gluzo/integration-gateway/app/integrations/vinculum/dto"
 )
 
-// Field widths the specification states.
 const (
 	MaxOrderNoLength       = 50
 	MaxOrderLocationLength = 3
+	OrderDateLayout        = "02/01/2006 15:04:05"
 )
 
-// CreateOrderRequest is one order offered to the vendor for fulfilment.
+// CreateOrderRequest serializes inside the required outer order object.
+// orderAmount is the header total and items contains the lines.
+// TODO(VERIFY): the table calls orderAmount an array, contradicting its total
+// description and decimal-string example. Tenant acceptance remains pending.
 type CreateOrderRequest struct {
-	// OrderNo carries Gluzo's own order identifier — the EasyEcom order id.
-	//
-	// This is what makes submission idempotent: Vinculum rejects a second
-	// order under the same number, so a resumed or redelivered run cannot
-	// create a duplicate even if the gateway believes it must try again.
-	OrderNo string `json:"orderNo"`
-	// OrderLocation is the vendor-side warehouse, three characters.
-	OrderLocation string `json:"orderLocation"`
-
-	OrderType     string `json:"orderType,omitempty"`
-	PaymentType   string `json:"paymentType,omitempty"`
-	Status        string `json:"status,omitempty"`
-	OrderDate     string `json:"orderDate,omitempty"`
-	OrderCurrency string `json:"orderCurrency,omitempty"`
-
-	// AWBNo exists in the contract and stays empty: under dropship BCPL
-	// books the courier, so the gateway has no waybill to offer and must not
-	// invent one.
-	AWBNo string `json:"awbNo,omitempty"`
-
-	ShipTo       string `json:"shipTo,omitempty"`
-	ShipAddress  string `json:"shipAddress1,omitempty"`
-	ShipAddress2 string `json:"shipAddress2,omitempty"`
-	ShipCity     string `json:"shipCity,omitempty"`
-	ShipState    string `json:"shipState,omitempty"`
-	ShipCountry  string `json:"shipCountry,omitempty"`
-	ShipPincode  string `json:"shipPincode,omitempty"`
-	ShipMobile   string `json:"shipMobile,omitempty"`
-	ShipEmail    string `json:"shipEmail,omitempty"`
-
-	OrderAmount []Line `json:"orderAmount"`
+	OrderNo       string  `json:"orderNo"`
+	OrderLocation string  `json:"orderLocation"`
+	ReqType       string  `json:"reqType"`
+	OrderType     string  `json:"orderType"`
+	PaymentType   string  `json:"paymentType"`
+	Status        string  `json:"status"`
+	OrderDate     string  `json:"orderDate"`
+	OrderCurrency string  `json:"orderCurrency"`
+	OrderAmount   float64 `json:"orderAmount,string"`
+	AWBNo         string  `json:"awbNo,omitempty"`
+	CustomerCode  string  `json:"customerCode,omitempty"`
+	ShipTo        string  `json:"customerName,omitempty"`
+	ShipAddress   string  `json:"shipAddress1,omitempty"`
+	ShipAddress2  string  `json:"shipAddress2,omitempty"`
+	ShipCity      string  `json:"shipCity,omitempty"`
+	ShipState     string  `json:"shipState,omitempty"`
+	ShipCountry   string  `json:"shipCountry,omitempty"`
+	ShipPincode   string  `json:"shipPinCode,omitempty"`
+	ShipMobile    string  `json:"shipPhone1,omitempty"`
+	ShipEmail     string  `json:"shipEmail1,omitempty"`
+	BillName      string  `json:"billName,omitempty"`
+	BillAddress   string  `json:"billAddress1,omitempty"`
+	BillAddress2  string  `json:"billAddress2,omitempty"`
+	BillCity      string  `json:"billCity,omitempty"`
+	BillState     string  `json:"billState,omitempty"`
+	BillCountry   string  `json:"billCountry,omitempty"`
+	BillPincode   string  `json:"billPinCode,omitempty"`
+	BillMobile    string  `json:"billPhone1,omitempty"`
+	BillEmail     string  `json:"billEmail1,omitempty"`
+	Items         []Line  `json:"items"`
 }
 
-// Line is one order line.
+type requestFields CreateOrderRequest
+
+func (r CreateOrderRequest) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Order requestFields `json:"order"`
+	}{requestFields(r)})
+}
+
+// UnmarshalJSON accepts the v4 order envelope only.
+func (r *CreateOrderRequest) UnmarshalJSON(data []byte) error {
+	var wrapper struct {
+		Order *requestFields `json:"order"`
+	}
+	if err := json.Unmarshal(data, &wrapper); err != nil {
+		return err
+	}
+	if wrapper.Order == nil {
+		return errors.New("create-order document requires an outer order object")
+	}
+	*r = CreateOrderRequest(*wrapper.Order)
+	return nil
+}
+
 type Line struct {
-	// LineNo identifies the line within the order and must be persisted:
-	// Vinculum's shipment response is line-level, so without it a dispatch
-	// cannot be attributed to the item it shipped.
-	LineNo int `json:"lineno"`
-	// SKU is the vendor's item code, not Gluzo's. Translation happens in the
-	// workflow, against the integration's SKU map.
-	SKU       string  `json:"sku"`
-	OrderQty  int     `json:"orderQty"`
-	UnitPrice float64 `json:"unitPrice"`
-	// MRP is the printed maximum retail price. Where the origin does not
-	// carry one, the unit price stands in: a zero MRP reads as "free" on a
-	// customer-facing document.
-	MRP           float64 `json:"mrp,omitempty"`
-	DiscountAmt   float64 `json:"discountAmt,omitempty"`
-	TaxPercentage float64 `json:"taxPercentage,omitempty"`
+	LineNo        int     `json:"lineno,string"`
+	SKU           string  `json:"sku"`
+	OrderQty      int     `json:"orderQty,string"`
+	UnitPrice     float64 `json:"unitPrice,string"`
+	MRP           float64 `json:"mrp,string,omitempty"`
+	DiscountAmt   float64 `json:"discountAmt,string,omitempty"`
+	TaxPercentage float64 `json:"taxPercentage,string,omitempty"`
+	TaxInclusive  string  `json:"taxInclusive,omitempty"`
+	Mode          string  `json:"mode,omitempty"`
 	Vendor        string  `json:"vendor,omitempty"`
-
-	UDF1 string `json:"udf1,omitempty"`
-	UDF2 string `json:"udf2,omitempty"`
-	UDF3 string `json:"udf3,omitempty"`
-	UDF4 string `json:"udf4,omitempty"`
+	UDF1          string  `json:"udf1,omitempty"`
+	UDF2          string  `json:"udf2,omitempty"`
+	UDF3          string  `json:"udf3,omitempty"`
+	UDF4          string  `json:"udf4,omitempty"`
 }
 
-// Validate reports every invariant the request violates.
-//
-// The checks that mirror Vinculum's documented widths are done here rather
-// than left to the vendor, so an over-long identifier is a mapping failure
-// naming the field instead of an opaque rejection at submission time.
 func (r CreateOrderRequest) Validate() error {
 	var errs []error
-	orderNo := strings.TrimSpace(r.OrderNo)
-	switch {
-	case orderNo == "":
-		errs = append(errs, errors.New("orderNo is required"))
-	case len(orderNo) > MaxOrderNoLength:
-		errs = append(errs, fmt.Errorf("orderNo %q exceeds %d characters", orderNo, MaxOrderNoLength))
+	check := func(name, value string, max int, required bool) {
+		if required && strings.TrimSpace(value) == "" {
+			errs = append(errs, fmt.Errorf("%s is required", name))
+		}
+		if utf8.RuneCountInString(value) > max {
+			errs = append(errs, fmt.Errorf("%s exceeds %d characters", name, max))
+		}
 	}
-
-	location := strings.TrimSpace(r.OrderLocation)
-	switch {
-	case location == "":
-		errs = append(errs, errors.New("orderLocation is required"))
-	case len(location) > MaxOrderLocationLength:
-		errs = append(errs, fmt.Errorf("orderLocation %q exceeds %d characters", location, MaxOrderLocationLength))
+	check("orderNo", r.OrderNo, MaxOrderNoLength, true)
+	check("orderLocation", r.OrderLocation, MaxOrderLocationLength, true)
+	check("orderType", r.OrderType, 200, true)
+	check("paymentType", r.PaymentType, 50, true)
+	check("status", r.Status, 50, true)
+	check("orderCurrency", r.OrderCurrency, 10, true)
+	check("customerCode", r.CustomerCode, 20, false)
+	if r.ReqType != "create" {
+		errs = append(errs, errors.New("reqType must be create"))
 	}
-
-	if len(r.OrderAmount) == 0 {
+	if _, err := time.Parse(OrderDateLayout, r.OrderDate); err != nil {
+		errs = append(errs, errors.New("orderDate must use DD/MM/YYYY HH:mm:ss"))
+	}
+	if !validAmount(r.OrderAmount) {
+		errs = append(errs, errors.New("orderAmount must be finite and nonnegative"))
+	}
+	required := strings.TrimSpace(r.CustomerCode) == ""
+	for _, f := range []struct {
+		name, value string
+		max         int
+		required    bool
+	}{
+		{"customerName", r.ShipTo, 100, required}, {"shipAddress1", r.ShipAddress, 1000, required}, {"shipAddress2", r.ShipAddress2, 200, false},
+		{"shipCity", r.ShipCity, 40, required}, {"shipState", r.ShipState, 50, required}, {"shipCountry", r.ShipCountry, 50, required},
+		{"shipPinCode", r.ShipPincode, 50, required}, {"shipPhone1", r.ShipMobile, 20, required}, {"shipEmail1", r.ShipEmail, 255, required},
+		{"billName", r.BillName, 200, required}, {"billAddress1", r.BillAddress, 1000, required}, {"billAddress2", r.BillAddress2, 200, false},
+		{"billCity", r.BillCity, 40, required}, {"billState", r.BillState, 50, required}, {"billCountry", r.BillCountry, 50, required},
+		{"billPinCode", r.BillPincode, 50, required}, {"billPhone1", r.BillMobile, 20, required}, {"billEmail1", r.BillEmail, 255, required},
+	} {
+		check(f.name, f.value, f.max, f.required)
+	}
+	if len(r.Items) == 0 {
 		errs = append(errs, errors.New("at least one order line is required"))
 	}
-	seen := make(map[int]bool, len(r.OrderAmount))
-	for i, line := range r.OrderAmount {
-		if strings.TrimSpace(line.SKU) == "" {
-			errs = append(errs, fmt.Errorf("line %d has no sku", i))
-		}
-		if line.OrderQty <= 0 {
-			errs = append(errs, fmt.Errorf("line %d (%s) has quantity %d", i, line.SKU, line.OrderQty))
-		}
-		if line.LineNo <= 0 {
-			errs = append(errs, fmt.Errorf("line %d (%s) has no line number", i, line.SKU))
-		}
-		if seen[line.LineNo] {
-			// Duplicated line numbers would make a line-level shipment
-			// response ambiguous, which is the one thing lineno exists for.
-			errs = append(errs, fmt.Errorf("line number %d appears more than once", line.LineNo))
+	seen := map[int]bool{}
+	for i, line := range r.Items {
+		check(fmt.Sprintf("items[%d].sku", i), line.SKU, 50, true)
+		if line.OrderQty <= 0 || line.LineNo <= 0 || seen[line.LineNo] {
+			errs = append(errs, fmt.Errorf("line %d requires positive quantity and a unique positive line number", i))
 		}
 		seen[line.LineNo] = true
+		if !validAmount(line.UnitPrice) || !validAmount(line.MRP) || !validAmount(line.DiscountAmt) || !validAmount(line.TaxPercentage) {
+			errs = append(errs, fmt.Errorf("line %d has invalid amounts", i))
+		}
+		if line.Mode != "" && line.Mode != "wms" && line.Mode != "dropship" {
+			errs = append(errs, fmt.Errorf("line %d mode must be wms or dropship", i))
+		}
+		if line.TaxInclusive != "" && line.TaxInclusive != "Yes" && line.TaxInclusive != "No" {
+			errs = append(errs, fmt.Errorf("line %d taxInclusive must be Yes or No", i))
+		}
+		check("vendor", line.Vendor, 10, false)
+		for _, v := range []string{line.UDF1, line.UDF2, line.UDF3, line.UDF4} {
+			check("line udf", v, 50, false)
+		}
 	}
 	return errors.Join(errs...)
 }
 
-// CreateOrderResponse is the envelope returned by order creation.
-//
-// TODO(VERIFY): the specification documents the envelope but not what an
-// accepted order returns beyond it. OrderNo is decoded where present; the
-// adapter falls back to the number it sent, which it knows.
+func validAmount(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) && v >= 0 }
+
+// CreateOrderResponse follows the documented requestStatus acknowledgement.
 type CreateOrderResponse struct {
 	dto.Envelope
-
-	OrderNo dto.FlexString `json:"orderNo"`
-	// Response carries per-order detail on some Vinculum endpoints.
-	Response []CreateOrderResult `json:"response"`
+	RequestStatus *CreateOrderResult `json:"requestStatus"`
 }
 
-// CreateOrderResult is one order's outcome where Vinculum reports a list.
 type CreateOrderResult struct {
-	OrderNo dto.FlexString `json:"orderNo"`
-	Status  dto.FlexString `json:"status"`
-	Message string         `json:"message"`
+	UniqueKey  dto.FlexString `json:"uniqueKey"`
+	RequestKey dto.FlexString `json:"requestKey"`
+	OutputKey  dto.FlexString `json:"outputKey"`
+	DSOrderNo  dto.FlexString `json:"dsOrderNo"`
+	Status     string         `json:"status"`
+	ErrorCode  dto.FlexString `json:"errorCode"`
+	ErrorDesc  string         `json:"errorDesc"`
 }
 
-// VendorOrderNo returns the identifier Vinculum reported, if any.
 func (r CreateOrderResponse) VendorOrderNo() string {
-	if v := strings.TrimSpace(r.OrderNo.String()); v != "" {
-		return v
+	if r.RequestStatus == nil {
+		return ""
 	}
-	for _, res := range r.Response {
-		if v := strings.TrimSpace(res.OrderNo.String()); v != "" {
-			return v
-		}
+	if id := strings.TrimSpace(r.RequestStatus.OutputKey.String()); id != "" {
+		return id
 	}
-	return ""
+	return strings.TrimSpace(r.RequestStatus.DSOrderNo.String())
 }

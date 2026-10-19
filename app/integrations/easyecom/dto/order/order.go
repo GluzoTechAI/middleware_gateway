@@ -23,15 +23,24 @@ type Order struct {
 	Marketplace   string         `json:"marketplace"` // VERIFY
 	MarketplaceID dto.FlexString `json:"marketplace_id"`
 
-	CustomerName string         `json:"customer_name"`
-	ContactNum   dto.FlexString `json:"contact_num"`
-	Email        string         `json:"email"` // VERIFY
-	AddressLine1 string         `json:"address_line_1"`
-	AddressLine2 string         `json:"address_line_2"` // VERIFY
-	City         string         `json:"city"`
-	State        string         `json:"state"`
-	PinCode      dto.FlexString `json:"pin_code"`
-	Country      string         `json:"country"` // VERIFY
+	CustomerName    string         `json:"customer_name"`
+	ContactNum      dto.FlexString `json:"contact_num"`
+	Email           string         `json:"email"` // VERIFY
+	AddressLine1    string         `json:"address_line_1"`
+	AddressLine2    string         `json:"address_line_2"` // VERIFY
+	City            string         `json:"city"`
+	State           string         `json:"state"`
+	PinCode         dto.FlexString `json:"pin_code"`
+	Country         string         `json:"country"` // VERIFY
+	BillingName     string         `json:"billing_name"`
+	BillingAddress1 string         `json:"billing_address_1"`
+	BillingAddress2 string         `json:"billing_address_2"`
+	BillingCity     string         `json:"billing_city"`
+	BillingState    string         `json:"billing_state"`
+	BillingCountry  string         `json:"billing_country"`
+	BillingPinCode  dto.FlexString `json:"billing_pin_code"`
+	BillingMobile   dto.FlexString `json:"billing_mobile"`
+	Currency        string         `json:"invoice_currency_code"`
 
 	TotalAmount dto.FlexFloat `json:"total_amount"`
 	PaymentMode string        `json:"payment_mode"`

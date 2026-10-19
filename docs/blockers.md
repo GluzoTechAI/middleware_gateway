@@ -105,9 +105,15 @@ a day's work, and a permanently weaker guarantee.
 | B14 | EasyEcom `getInventoryDetailsV2`, `Carriers/getTrackingDetails` | EasyEcom | Unverified | Nothing | Nothing — **unused under dropship** | Delete or rework in Phases 3, 6 |
 | B15 | Bulk Inventory Update's **path** | EasyEcom | `/bulkInventoryUpdate` | Phase 4 live | **Fails loud:** every push errors on the first call | One constant |
 | B16 | Bulk Inventory Update's per-SKU result shape | EasyEcom | Absent list = all accepted | Nothing | Partial failures reported as successes | One function |
-| B17 | Vinculum's `ship*` address field names | BCPL | Documented prefix, conventional names | **Phase 5 live** | **Fails quietly:** order accepted and shipped with a field missing | Nine struct tags |
+| B17 | Vinculum shipping/billing persistence | BCPL | v4 fields aligned to official documentation on 19 October 2026; tenant persistence unverified | **Phase 5 live** | **Fails quietly:** accepted order could omit recipient data | Request/response/config correction for new orders implemented; recorded tenant test still required |
 | B18 | The duplicate-order rejection's code and wording | BCPL | Keyword match, overridable by config | Nothing | Fails loudly; order stuck and visible, never duplicated | Configuration |
 | B19 | `AssignShipmentDetails` and `updateTrackingStatus` **paths** | EasyEcom | Conventional names | Phase 6 live | **Fails loud:** every dispatch push errors on the first call | Two constants |
+
+The approved 19 October 2026 correction exceeds the original nine-tag estimate:
+it fixes envelope, lines/total, contacts, configured master values/date handling,
+and acknowledgements for new orders. See the
+[contract review and acceptance checklist](vinculum-order-create-review.md).
+Documentation alignment and local regression tests leave B17 **open**.
 
 **On B17 — read this one.** It is the only unverified item in the project
 that can be wrong **without anyone noticing**. Every other guess fails loudly:

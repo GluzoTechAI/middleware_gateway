@@ -60,7 +60,7 @@ func TestIntegrationRoutingDeliversOrdersWithoutWarehouseRoutes(t *testing.T) {
 		t.Fatal(err)
 	}
 	vinAPI := newFakeVinculumAPI(t)
-	vinClient, err := vinculum.NewClient(vinculum.Config{BaseURL: vinAPI.srv.URL, APIOwner: e2eVinculumOwner, APIKey: e2eVinculumKey, Location: "PBW", SellableBucket: "Good"})
+	vinClient, err := vinculum.NewClient(vinculum.Config{BaseURL: vinAPI.srv.URL, APIOwner: e2eVinculumOwner, APIKey: e2eVinculumKey, Location: "PBW", SellableBucket: "Good", OrderOptions: e2eVinculumOrderOptions()})
 	if err != nil {
 		t.Fatal(err)
 	}

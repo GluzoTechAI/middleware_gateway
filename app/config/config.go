@@ -147,9 +147,17 @@ type EasyEcom struct {
 // Presence is validated when the Vinculum client is built, so a process that
 // only receives webhooks can start without any of it.
 type Vinculum struct {
-	BaseURL  string
-	APIOwner string
-	APIKey   string
+	PrepaidOrderType   string
+	CODOrderType       string
+	PrepaidPaymentType string
+	CODPaymentType     string
+	OrderStatus        string
+	OrderTimezone      string
+	OrderMode          string
+	OrderTaxInclusive  string
+	BaseURL            string
+	APIOwner           string
+	APIKey             string
 
 	Location       string
 	SellableBucket string
@@ -312,11 +320,19 @@ func LoadFrom(lookup Lookup) (*Config, error) {
 			ReconcileThreshold: r.duration("RECONCILE_THRESHOLD", 30*time.Minute),
 		},
 		Vinculum: Vinculum{
-			BaseURL:        r.str("VINCULUM_BASE_URL", "https://erp.vineretail.com"),
-			APIOwner:       r.str("VINCULUM_API_OWNER", ""),
-			APIKey:         r.str("VINCULUM_API_KEY", ""),
-			Location:       r.str("VINCULUM_LOCATION", ""),
-			SellableBucket: r.str("VINCULUM_SELLABLE_BUCKET", ""),
+			PrepaidOrderType:   r.str("VINCULUM_ORDER_TYPE_PREPAID", ""),
+			CODOrderType:       r.str("VINCULUM_ORDER_TYPE_COD", ""),
+			PrepaidPaymentType: r.str("VINCULUM_PAYMENT_TYPE_PREPAID", ""),
+			CODPaymentType:     r.str("VINCULUM_PAYMENT_TYPE_COD", ""),
+			OrderStatus:        r.str("VINCULUM_ORDER_STATUS", ""),
+			OrderTimezone:      r.str("VINCULUM_ORDER_TIMEZONE", ""),
+			OrderMode:          r.str("VINCULUM_ORDER_MODE", ""),
+			OrderTaxInclusive:  r.str("VINCULUM_ORDER_TAX_INCLUSIVE", ""),
+			BaseURL:            r.str("VINCULUM_BASE_URL", "https://erp.vineretail.com"),
+			APIOwner:           r.str("VINCULUM_API_OWNER", ""),
+			APIKey:             r.str("VINCULUM_API_KEY", ""),
+			Location:           r.str("VINCULUM_LOCATION", ""),
+			SellableBucket:     r.str("VINCULUM_SELLABLE_BUCKET", ""),
 
 			DuplicateOrderCodes: r.list("VINCULUM_DUPLICATE_ORDER_CODES"),
 			OrderRateLimit:      r.int("VINCULUM_ORDER_RATE_LIMIT", 80),

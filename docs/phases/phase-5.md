@@ -2,6 +2,14 @@
 
 Part of [EasyEcom × Vinculum](../vinculum-integration-plan.md). 30 September 2026.
 
+**19 October 2026 correction:** the v4 request now follows the documented outer
+`order` object, `items` lines, scalar total and explicit shipping/billing fields.
+Tenant masters/timezone are configuration, acknowledgements require
+`requestStatus`. Staging verification uses new orders. See the
+[contract review and verification checklist](../vinculum-order-create-review.md).
+B17 and B18 remain open pending recorded tenant tests. The narrative below
+records the original phase implementation.
+
 **Goal:** a BCPL order placed on the storefront reaches BCPL's warehouse.
 
 > **Do not run this phase against BCPL production.** It is the first phase
@@ -131,10 +139,10 @@ its own tests.
 
 | Item | If wrong |
 |---|---|
-| **The `ship*` address field names** | **Fails quietly.** The specification says "the ship* address block" without enumerating it. Vinculum would accept the order and ship it with a field missing. |
+| **The `ship*` address field names** | **Fails quietly.** Fields now match the official v4 table/example, but actual tenant shipping/billing persistence still requires a recorded order. |
 | The duplicate rejection's code and wording | Fails loudly; the order is stuck and visible, never duplicated |
-| `orderType`, `paymentType` values | Fails loudly at submission |
-| `orderDate` format | Shared with B11, already tracked |
+| Order types, payment methods and initial status | Explicit settings without defaults; missing values fail locally before submission |
+| `orderDate` and timezone | Create uses the v4 example layout with configured timezone; tenant acceptance pending. Read dates retain B11. |
 
 The first is the only thing in this phase that can go wrong without anyone
 noticing, and it is **the reason not to run Phase 5 against production before

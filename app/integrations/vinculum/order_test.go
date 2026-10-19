@@ -24,7 +24,7 @@ func sampleOrder() order.Order {
 		Customer:      order.Customer{Name: "Asha Verma", Phone: "9876501234", Email: "asha@example.com"},
 		ShippingAddress: order.Address{
 			Name: "Asha Verma", Line1: "12 MG Road", City: "Pune",
-			State: "Maharashtra", PostalCode: "411001", Phone: "9876501234",
+			State: "Maharashtra", PostalCode: "411001", Country: "India", Phone: "9876501234",
 		},
 		Items: []order.Item{
 			{ExternalID: "555001", SKU: "BCPL-CHY-500", Quantity: 2, UnitPrice: 499.75, TaxRate: 18},
@@ -61,7 +61,7 @@ func TestPrepareOrderMapsTheDocument(t *testing.T) {
 	if req.OrderLocation != "DEL" {
 		t.Errorf("orderLocation = %q, want the route's vendor reference", req.OrderLocation)
 	}
-	if req.PaymentType != "COD" {
+	if req.PaymentType != "Cash" {
 		t.Errorf("paymentType = %q", req.PaymentType)
 	}
 	// BCPL books the courier, so the gateway has no waybill and must not
@@ -73,25 +73,25 @@ func TestPrepareOrderMapsTheDocument(t *testing.T) {
 		t.Errorf("shipping address = %+v", req)
 	}
 
-	if len(req.OrderAmount) != 2 {
-		t.Fatalf("got %d lines, want 2", len(req.OrderAmount))
+	if len(req.Items) != 2 {
+		t.Fatalf("got %d lines, want 2", len(req.Items))
 	}
 	// Line numbers are one-based and unique: Vinculum's shipment response is
 	// line-level, so a repeated number would make a dispatch ambiguous.
-	if req.OrderAmount[0].LineNo != 1 || req.OrderAmount[1].LineNo != 2 {
-		t.Errorf("line numbers = %d, %d", req.OrderAmount[0].LineNo, req.OrderAmount[1].LineNo)
+	if req.Items[0].LineNo != 1 || req.Items[1].LineNo != 2 {
+		t.Errorf("line numbers = %d, %d", req.Items[0].LineNo, req.Items[1].LineNo)
 	}
-	if req.OrderAmount[0].SKU != "BCPL-CHY-500" || req.OrderAmount[0].OrderQty != 2 {
-		t.Errorf("line 1 = %+v", req.OrderAmount[0])
+	if req.Items[0].SKU != "BCPL-CHY-500" || req.Items[0].OrderQty != 2 {
+		t.Errorf("line 1 = %+v", req.Items[0])
 	}
 	// The origin's line id travels in a user-defined field so a dispatch can
 	// be traced back without another lookup.
-	if req.OrderAmount[0].UDF1 != "555001" {
-		t.Errorf("udf1 = %q, want the origin line id", req.OrderAmount[0].UDF1)
+	if req.Items[0].UDF1 != "555001" {
+		t.Errorf("udf1 = %q, want the origin line id", req.Items[0].UDF1)
 	}
-	// A zero MRP reads as "free" on a customer-facing document.
-	if req.OrderAmount[0].MRP != 499.75 {
-		t.Errorf("mrp = %v, want the unit price when the origin carries none", req.OrderAmount[0].MRP)
+	// An absent source MRP must not be invented from the selling price.
+	if req.Items[0].MRP != 0 {
+		t.Errorf("mrp = %v, want omitted when the origin carries none", req.Items[0].MRP)
 	}
 }
 
@@ -262,7 +262,8 @@ func TestTheRateLimiterHoldsUnderABurst(t *testing.T) {
 		req := dtoorder.CreateOrderRequest{
 			OrderNo:       "ORD-" + itoa(i),
 			OrderLocation: "DEL",
-			OrderAmount:   []dtoorder.Line{{LineNo: 1, SKU: "BCPL-A", OrderQty: 1}},
+			Items:         []dtoorder.Line{{LineNo: 1, SKU: "BCPL-A", OrderQty: 1}},
+			OrderType:     "COD", PaymentType: "Cash", Status: "Confirmed", ReqType: "create", OrderDate: "30/09/2026 17:00:00", OrderCurrency: "INR", CustomerCode: "test-customer",
 		}
 		if _, err := c.CreateOrder(ctx, req); err != nil {
 			t.Fatalf("CreateOrder %d: %v", i, err)
@@ -312,7 +313,7 @@ func TestTheRateLimiterStopsOnCancellation(t *testing.T) {
 	})
 
 	req := dtoorder.CreateOrderRequest{OrderNo: "A", OrderLocation: "DEL",
-		OrderAmount: []dtoorder.Line{{LineNo: 1, SKU: "S", OrderQty: 1}}}
+		Items: []dtoorder.Line{{LineNo: 1, SKU: "S", OrderQty: 1}}, OrderType: "COD", PaymentType: "Cash", Status: "Confirmed", ReqType: "create", OrderDate: "30/09/2026 17:00:00", OrderCurrency: "INR", CustomerCode: "test-customer"}
 	if _, err := c.CreateOrder(ctx, req); err != nil {
 		t.Fatalf("first CreateOrder: %v", err)
 	}

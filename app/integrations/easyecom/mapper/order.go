@@ -42,17 +42,7 @@ func ToDomainOrder(src dtoorder.Order) (order.Order, error) {
 		return order.Order{}, mappingError(fmt.Sprintf("order %s: %v", externalID, err))
 	}
 
-	address := order.Address{
-		Name:       strings.TrimSpace(src.CustomerName),
-		Line1:      strings.TrimSpace(src.AddressLine1),
-		Line2:      strings.TrimSpace(src.AddressLine2),
-		City:       strings.TrimSpace(src.City),
-		State:      strings.TrimSpace(src.State),
-		Country:    strings.TrimSpace(src.Country),
-		PostalCode: strings.TrimSpace(src.PinCode.String()),
-		Phone:      strings.TrimSpace(src.ContactNum.String()),
-		Email:      strings.TrimSpace(src.Email),
-	}
+	address, billing := ToDomainAddresses(src)
 
 	items := src.Items()
 	out := order.Order{
@@ -70,12 +60,15 @@ func ToDomainOrder(src dtoorder.Order) (order.Order, error) {
 			Phone: address.Phone,
 		},
 		ShippingAddress: address,
-		BillingAddress:  address, // EasyEcom's order payload carries a single address
+		BillingAddress:  billing,
 		PaymentMode:     NormalisePaymentMode(src.PaymentMode),
-		Currency:        "INR",
+		Currency:        strings.TrimSpace(src.Currency),
 		TotalAmount:     float64(src.TotalAmount),
 		Items:           make([]order.Item, 0, len(items)),
 	}
+	if out.Currency == "" {
+		out.Currency = "INR"
+	} // Existing EasyEcom default for older payloads.
 	for i, item := range items {
 		mapped, err := toDomainItem(item)
 		if err != nil {
@@ -88,6 +81,36 @@ func ToDomainOrder(src dtoorder.Order) (order.Order, error) {
 		return order.Order{}, mappingError(fmt.Sprintf("order %s: %v", externalID, err))
 	}
 	return out, nil
+}
+
+// ToDomainAddresses reads the captured shipping and billing field names. A
+// payload without any billing data retains the existing shared-address policy.
+func ToDomainAddresses(src dtoorder.Order) (order.Address, order.Address) {
+	ship := order.Address{
+		Name:  strings.TrimSpace(src.CustomerName),
+		Line1: strings.TrimSpace(src.AddressLine1), Line2: strings.TrimSpace(src.AddressLine2),
+		City: strings.TrimSpace(src.City), State: strings.TrimSpace(src.State),
+		Country: strings.TrimSpace(src.Country), PostalCode: strings.TrimSpace(src.PinCode.String()),
+		Phone: strings.TrimSpace(src.ContactNum.String()), Email: strings.TrimSpace(src.Email),
+	}
+	bill := order.Address{
+		Name:  strings.TrimSpace(src.BillingName),
+		Line1: strings.TrimSpace(src.BillingAddress1), Line2: strings.TrimSpace(src.BillingAddress2),
+		City: strings.TrimSpace(src.BillingCity), State: strings.TrimSpace(src.BillingState),
+		Country: strings.TrimSpace(src.BillingCountry), PostalCode: strings.TrimSpace(src.BillingPinCode.String()),
+		Phone: strings.TrimSpace(src.BillingMobile.String()),
+	}
+	if bill.IsEmpty() {
+		return ship, ship
+	}
+	if bill.Name == "" {
+		bill.Name = ship.Name
+	}
+	if bill.Phone == "" {
+		bill.Phone = ship.Phone
+	}
+	bill.Email = ship.Email
+	return ship, bill
 }
 
 func toDomainItem(src dtoorder.Item) (order.Item, error) {

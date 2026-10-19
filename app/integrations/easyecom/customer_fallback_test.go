@@ -118,3 +118,13 @@ func TestContactFallbackFillsAddressFieldsAndIsIdempotent(t *testing.T) {
 		t.Fatal("input or items were mutated")
 	}
 }
+
+func TestWebhookFallbackUsesItsBillingAddressForMissingBillingFields(t *testing.T) {
+	_, src := newSource(t)
+	input := order.Order{ExternalID: "652462545", ShippingAddress: order.Address{Line1: "Current Shipping"}, BillingAddress: order.Address{City: "Current Billing City"}}
+	ev := event.Event{ExternalOrderID: input.ExternalID, Payload: []byte(`{"order_id":652462545,"customer_name":"Shipping Name","address_line_1":"Webhook Shipping","city":"Noida","billing_name":"Billing Name","billing_address_1":"Webhook Billing","billing_city":"Mumbai","billing_mobile":8888888888}`)}
+	got := src.EnrichOrderContact(input, ev)
+	if got.ShippingAddress.Line1 != "Current Shipping" || got.BillingAddress.Line1 != "Webhook Billing" || got.BillingAddress.Name != "Billing Name" || got.BillingAddress.City != "Current Billing City" || got.BillingAddress.Phone != "8888888888" {
+		t.Fatalf("billing overwritten by shipping: %+v", got)
+	}
+}

@@ -48,6 +48,12 @@ secret manager. Never commit `.env`.
 | `VINCULUM_LOCATION` | | Default three-character `orderLocation`; a route's vendor reference overrides it |
 | `VINCULUM_SELLABLE_BUCKET` | | Stock bucket the storefront may sell from; blank accepts every bucket |
 | `VINCULUM_TIMEOUT` | `20s` | Per-attempt timeout for Vinculum calls |
+| `VINCULUM_ORDER_TYPE_PREPAID`, `VINCULUM_ORDER_TYPE_COD` | | Confirmed tenant order types (`ODRTYPE`); the current order's mode must be configured |
+| `VINCULUM_PAYMENT_TYPE_PREPAID`, `VINCULUM_PAYMENT_TYPE_COD` | | Actual tenant payment methods for each payment mode; prepaid does not establish a card payment |
+| `VINCULUM_ORDER_STATUS` | | Confirmed initial tenant order status (`ODRSTS`) |
+| `VINCULUM_ORDER_TIMEZONE` | | Confirmed IANA timezone for create timestamps, e.g. `Asia/Kolkata` once verified |
+| `VINCULUM_ORDER_MODE` | | Optional item `mode`: `wms` or `dropship`; blank leaves the API default |
+| `VINCULUM_ORDER_TAX_INCLUSIVE` | | Optional `Yes` / `No`, only after confirming the source price basis |
 | `VINCULUM_ORDER_RATE_LIMIT` | `80` | Maximum order creations per window (Vinculum's documented ceiling) |
 | `VINCULUM_ORDER_RATE_WINDOW` | `5m` | The window that limit applies over |
 | `VINCULUM_DUPLICATE_ORDER_CODES` | | Comma-separated `responseCode` values meaning "order already exists"; empty falls back to matching the vendor's message |
@@ -68,9 +74,16 @@ secret manager. Never commit `.env`.
 | `WORKER_STALE_RUNNING_AFTER` | `10m` | Age after which a running run is treated as abandoned by a periodic scan |
 | `WORKER_RETRY_FAILED_AFTER` | `1m` | Cooling period before a transient failure is resumed |
 
-The Vinculum client reads stock and dispatch records. No workflow calls it
-yet, so the `VINCULUM_*` variables may be left blank; the client validates
-them only when it is built.
+The worker uses Vinculum for order creation, inventory and dispatch. Missing
+order master values, status or timezone cause a local mapping failure before an
+order is submitted; read operations do not need these order settings. The checked
+in `.env.example` intentionally leaves tenant values blank. Existing deployments
+must configure them and restart the worker before creating new test orders.
+
+For staging verification, create a new order after deployment and configuration.
+Previously received workflows are outside this correction's scope; there is no
+legacy prepared-request migration. See [the implementation and tenant verification
+checklist](vinculum-order-create-review.md#the-implementation-corrects-new-orders-and-requires-tenant-verification).
 
 When the worker is enabled, EasyEcom credentials are required and validated
 at startup. Run intake-only instances (`WORKER_ENABLED=false`) without them.

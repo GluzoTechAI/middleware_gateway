@@ -1,0 +1,40 @@
+{
+  "order": {
+    "orderLocation": "PBW",
+    "orderNo": "652487720",
+    "reqType": "create",
+    "orderType": "CONFIRM_ORDER_TYPE",
+    "paymentType": "CONFIRM_PAYMENT_METHOD",
+    "status": "CONFIRM_INITIAL_STATUS",
+    "orderDate": "CONFIRM_DATE_DD/MM/YYYY_HH:mm:ss",
+    "orderCurrency": "INR",
+    "orderAmount": "CONFIRM_ORDER_TOTAL",
+    "customerName": "Test Customer",
+    "shipAddress1": "123 Test Street",
+    "shipAddress2": "Sector 1",
+    "shipCity": "Noida",
+    "shipState": "Uttar Pradesh",
+    "shipCountry": "India",
+    "shipPinCode": "201301",
+    "shipPhone1": "ACTUAL_CUSTOMER_PHONE",
+    "shipEmail1": "ACTUAL_CUSTOMER_EMAIL",
+    "billName": "ACTUAL_BILLING_NAME",
+    "billAddress1": "ACTUAL_BILLING_ADDRESS_LINE_1",
+    "billCity": "ACTUAL_BILLING_CITY",
+    "billState": "ACTUAL_BILLING_STATE",
+    "billCountry": "ACTUAL_BILLING_COUNTRY",
+    "billPinCode": "ACTUAL_BILLING_POSTAL_CODE",
+    "billPhone1": "ACTUAL_BILLING_PHONE",
+    "billEmail1": "ACTUAL_BILLING_EMAIL",
+    "items": [
+      {
+        "lineno": "1",
+        "sku": "3562700373145",
+        "orderQty": "1",
+        "unitPrice": "1049.00",
+        "taxPercentage": "18",
+        "udf1": "984352024"
+      }
+    ]
+  }
+}

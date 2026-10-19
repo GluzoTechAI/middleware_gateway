@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/gluzo/integration-gateway/app/apperror"
 	dtoorder "github.com/gluzo/integration-gateway/app/integrations/vinculum/dto/order"
 )
 
@@ -53,6 +54,16 @@ func (c *Client) CreateOrder(ctx context.Context, req dtoorder.CreateOrderReques
 	}
 	if err := checkEnvelope(op, resp.Envelope); err != nil {
 		return nil, err
+	}
+	if resp.RequestStatus == nil {
+		return nil, &apperror.Error{Category: apperror.ExternalAPI, Message: "Vinculum create response has no requestStatus", Integration: PlatformName, Operation: op}
+	}
+	ack := resp.RequestStatus
+	if !strings.EqualFold(strings.TrimSpace(ack.Status), "Success") || strings.TrimSpace(ack.ErrorDesc) != "" || (ack.ErrorCode.String() != "" && ack.ErrorCode.String() != "0") {
+		return nil, &apperror.Error{Category: apperror.ExternalAPI, Message: "vinculum rejected the order", ExternalCode: ack.ErrorCode.String(), ExternalMessage: strings.TrimSpace(ack.ErrorDesc), Integration: PlatformName, Operation: op}
+	}
+	if resp.VendorOrderNo() == "" {
+		return nil, &apperror.Error{Category: apperror.ExternalAPI, Message: "Vinculum acknowledgement has no outputKey or dsOrderNo", Integration: PlatformName, Operation: op}
 	}
 	return &resp, nil
 }

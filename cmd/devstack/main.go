@@ -81,7 +81,7 @@ const (
 // carries. One SKU, one unit, enough address to map.
 const devOrder = `[{"order_id":424242,"invoice_id":"INV-DEV","reference_code":"REF-DEV",` +
 	`"warehouse_id":777,"order_status":"Pending","customer_name":"Asha Verma",` +
-	`"contact_num":"9876501234","address_line_1":"12 MG Road","city":"Pune",` +
+	`"email":"asha@example.com","country":"India","order_date":"2026-10-19 10:00:00","contact_num":"9876501234","address_line_1":"12 MG Road","city":"Pune",` +
 	`"state":"Maharashtra","pin_code":"411001","total_amount":"250.00","payment_mode":"COD",` +
 	`"order_items":[{"suborder_id":1,"sku":"GLZ-DEV-1","suborder_quantity":1,"selling_price":250}]}]`
 
@@ -311,6 +311,12 @@ func startVinculumStub() (*stub, error) {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
+		orderBody, ok := body["order"].(map[string]any)
+		if !ok || len(body) != 1 {
+			http.Error(w, "expected order envelope", http.StatusBadRequest)
+			return
+		}
+		body = orderBody
 		orderNo, _ := body["orderNo"].(string)
 
 		s.mu.Lock()
@@ -329,7 +335,7 @@ func startVinculumStub() (*stub, error) {
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"responseCode": 0, "responseMessage": "SUCCESS", "orderNo": orderNo,
+			"responseCode": 0, "responseMessage": "SUCCESS", "requestStatus": map[string]any{"status": "Success", "outputKey": orderNo},
 		})
 	})
 	var err error
@@ -449,6 +455,11 @@ func writeEnvFile(path, root, dbURL, redisURL, easyURL, vinURL string) error {
 		{"VINCULUM_API_OWNER", devVinculumOwner},
 		{"VINCULUM_API_KEY", devVinculumKey},
 		{"VINCULUM_LOCATION", devVendorLocation},
+		// Synthetic master values used only by this local stub.
+		{"VINCULUM_ORDER_TYPE_PREPAID", "Prepaid"}, {"VINCULUM_ORDER_TYPE_COD", "COD"},
+		{"VINCULUM_PAYMENT_TYPE_PREPAID", "Credit Card"}, {"VINCULUM_PAYMENT_TYPE_COD", "Cash"},
+		{"VINCULUM_ORDER_STATUS", "Confirmed"}, {"VINCULUM_ORDER_TIMEZONE", "Asia/Kolkata"},
+		{"VINCULUM_ORDER_MODE", ""}, {"VINCULUM_ORDER_TAX_INCLUSIVE", ""},
 		// Assumption B2 is unresolved, and the adapter refuses to start
 		// without a bucket. "Good" is the stub's own value, not a claim
 		// about BCPL's.

@@ -125,6 +125,7 @@ func newFakeVinculum(t *testing.T) *fakeVinculum {
 		if body == nil {
 			return
 		}
+		body = requireOrderEnvelope(t, body)
 		orderNo, _ := body["orderNo"].(string)
 
 		f.mu.Lock()
@@ -147,7 +148,7 @@ func newFakeVinculum(t *testing.T) *fakeVinculum {
 			})
 		default:
 			f.writeJSON(w, map[string]any{
-				"responseCode": 0, "responseMessage": "SUCCESS", "orderNo": orderNo,
+				"responseCode": 0, "responseMessage": "SUCCESS", "requestStatus": map[string]any{"status": "Success", "outputKey": orderNo},
 			})
 		}
 	})
@@ -210,6 +211,7 @@ func (f *fakeVinculum) client(t *testing.T, opts ...vinculum.Option) *vinculum.C
 		APIKey:         testKey,
 		Location:       "DEL",
 		SellableBucket: "Good",
+		OrderOptions:   testOrderOptions(),
 		Timeout:        2 * time.Second,
 	}
 	c, err := vinculum.NewClient(cfg, append([]vinculum.Option{noSleep()}, opts...)...)

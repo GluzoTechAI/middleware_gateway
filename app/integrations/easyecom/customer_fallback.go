@@ -7,6 +7,7 @@ import (
 	"github.com/gluzo/integration-gateway/app/domain/order"
 	"github.com/gluzo/integration-gateway/app/event"
 	dtoorder "github.com/gluzo/integration-gateway/app/integrations/easyecom/dto/order"
+	"github.com/gluzo/integration-gateway/app/integrations/easyecom/mapper"
 	"github.com/gluzo/integration-gateway/app/vendor"
 )
 
@@ -37,20 +38,20 @@ func (s *Source) EnrichOrderContact(o order.Order, ev event.Event) order.Order {
 	fillContactField(&o.Customer.Name, webhook.CustomerName)
 	fillContactField(&o.Customer.Phone, webhook.ContactNum.String())
 	fillContactField(&o.Customer.Email, webhook.Email)
-	fillAddress := func(address *order.Address) {
-		fillContactField(&address.Name, webhook.CustomerName)
-		fillContactField(&address.Line1, webhook.AddressLine1)
-		fillContactField(&address.Line2, webhook.AddressLine2)
-		fillContactField(&address.City, webhook.City)
-		fillContactField(&address.State, webhook.State)
-		fillContactField(&address.Country, webhook.Country)
-		fillContactField(&address.PostalCode, webhook.PinCode.String())
-		fillContactField(&address.Phone, webhook.ContactNum.String())
-		fillContactField(&address.Email, webhook.Email)
+	fillAddress := func(address *order.Address, fallback order.Address) {
+		fillContactField(&address.Name, fallback.Name)
+		fillContactField(&address.Line1, fallback.Line1)
+		fillContactField(&address.Line2, fallback.Line2)
+		fillContactField(&address.City, fallback.City)
+		fillContactField(&address.State, fallback.State)
+		fillContactField(&address.Country, fallback.Country)
+		fillContactField(&address.PostalCode, fallback.PostalCode)
+		fillContactField(&address.Phone, fallback.Phone)
+		fillContactField(&address.Email, fallback.Email)
 	}
-	// The current EasyEcom mapper uses the same source address for both.
-	fillAddress(&o.ShippingAddress)
-	fillAddress(&o.BillingAddress)
+	ship, bill := mapper.ToDomainAddresses(webhook)
+	fillAddress(&o.ShippingAddress, ship)
+	fillAddress(&o.BillingAddress, bill)
 	return o
 }
 

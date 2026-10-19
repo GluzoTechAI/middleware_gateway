@@ -388,6 +388,12 @@ func buildWorker(
 	vendors := vendor.NewRegistry()
 	if cfg.Vinculum.APIOwner != "" || cfg.Vinculum.APIKey != "" {
 		vinculumClient, err := vinculum.NewClient(vinculum.Config{
+			OrderOptions: vinculum.OrderOptions{
+				PrepaidOrderType: cfg.Vinculum.PrepaidOrderType, CODOrderType: cfg.Vinculum.CODOrderType,
+				PrepaidPaymentType: cfg.Vinculum.PrepaidPaymentType, CODPaymentType: cfg.Vinculum.CODPaymentType,
+				InitialStatus: cfg.Vinculum.OrderStatus, Timezone: cfg.Vinculum.OrderTimezone,
+				Mode: cfg.Vinculum.OrderMode, TaxInclusive: cfg.Vinculum.OrderTaxInclusive,
+			},
 			BaseURL:        cfg.Vinculum.BaseURL,
 			APIOwner:       cfg.Vinculum.APIOwner,
 			APIKey:         cfg.Vinculum.APIKey,

@@ -55,7 +55,7 @@ const (
 	e2eAdminToken     = "admin-e2e-token"
 	e2eEasyJWT        = "e2e-easyecom-jwt-token"
 	e2eEasyAPIKey     = "e2e-easyecom-api-key"
-	e2eWebhookOrders  = `[{"order_id":424242,"invoice_id":"INV-E2E","reference_code":"REF-E2E","warehouse_id":777,"order_status":"Pending","customer_name":"Asha Verma","contact_num":"9876501234","address_line_1":"12 MG Road","city":"Pune","state":"Maharashtra","pin_code":"411001","total_amount":"250.00","payment_mode":"COD","order_items":[{"suborder_id":1,"sku":"BCPL-E2E","suborder_quantity":1,"selling_price":250}]}]`
+	e2eWebhookOrders  = `[{"order_id":424242,"invoice_id":"INV-E2E","reference_code":"REF-E2E","warehouse_id":777,"order_status":"Pending","customer_name":"Asha Verma","email":"asha@example.com","country":"India","order_date":"2026-10-19 10:00:00","contact_num":"9876501234","address_line_1":"12 MG Road","city":"Pune","state":"Maharashtra","pin_code":"411001","total_amount":"250.00","payment_mode":"COD","order_items":[{"suborder_id":1,"sku":"BCPL-E2E","suborder_quantity":1,"selling_price":250}]}]`
 )
 
 // fakeEasyEcomAPI answers the calls the origin adapter makes.
@@ -131,6 +131,12 @@ func newFakeVinculumAPI(t *testing.T) *fakeVinculumAPI {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
+		orderBody, ok := body["order"].(map[string]any)
+		if !ok || len(body) != 1 {
+			http.Error(w, "expected order envelope", http.StatusBadRequest)
+			return
+		}
+		body = orderBody
 		orderNo, _ := body["orderNo"].(string)
 
 		f.mu.Lock()
@@ -150,7 +156,7 @@ func newFakeVinculumAPI(t *testing.T) *fakeVinculumAPI {
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"responseCode": 0, "responseMessage": "SUCCESS", "orderNo": orderNo,
+			"responseCode": 0, "responseMessage": "SUCCESS", "requestStatus": map[string]any{"status": "Success", "outputKey": orderNo},
 		})
 	})
 	f.srv = httptest.NewServer(mux)
@@ -271,7 +277,7 @@ func TestEndToEndOrderSync(t *testing.T) {
 	vinAPI := newFakeVinculumAPI(t)
 	vinClient, err := vinculum.NewClient(vinculum.Config{
 		BaseURL: vinAPI.srv.URL, APIOwner: e2eVinculumOwner, APIKey: e2eVinculumKey,
-		Location: e2eLocation, SellableBucket: "Good",
+		Location: e2eLocation, SellableBucket: "Good", OrderOptions: e2eVinculumOrderOptions(),
 	}, vinculum.WithLogger(logger), vinculum.WithHTTPOptions(
 		httpclient.WithSleep(noSleep),
 		// The transport's own retry is off here so that the outage is
@@ -474,7 +480,7 @@ func TestEndToEndOrderSync(t *testing.T) {
 	// The vendor must be offered its own item code, not Gluzo's. Translated
 	// through the real sku_map table, so this also proves the workflow reads
 	// the store rather than passing the SKU through.
-	orderLines, _ := doc["orderAmount"].([]any)
+	orderLines, _ := doc["items"].([]any)
 	if len(orderLines) != 1 {
 		t.Fatalf("vendor received %d lines, want 1", len(orderLines))
 	}
@@ -483,7 +489,7 @@ func TestEndToEndOrderSync(t *testing.T) {
 		t.Fatalf("vendor was offered sku %q, want the mapped VIN-E2E", got)
 	}
 	// Line numbers are what Phase 6 will attribute a dispatch by.
-	if got, _ := line["lineno"].(float64); int(got) != 1 {
+	if got, _ := line["lineno"].(string); got != "1" {
 		t.Fatalf("line number = %v, want 1", line["lineno"])
 	}
 	if rec, err := idem.Get(ctx, "easyecom:ORDER_CREATED:"+e2eOrderID); err != nil || rec.Status != idempotency.StatusCompleted {
@@ -583,4 +589,9 @@ func TestEndToEndOrderSync(t *testing.T) {
 	if _, err := os.Stat(logFile); err != nil {
 		t.Fatalf("today's log was removed: %v", err)
 	}
+}
+
+// Synthetic tenant settings; these are not production defaults.
+func e2eVinculumOrderOptions() vinculum.OrderOptions {
+	return vinculum.OrderOptions{PrepaidOrderType: "Prepaid", CODOrderType: "COD", PrepaidPaymentType: "Credit Card", CODPaymentType: "Cash", InitialStatus: "Confirmed", Timezone: "Asia/Kolkata"}
 }

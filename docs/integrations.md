@@ -280,7 +280,27 @@ they are wrong and asking again would only be told the same thing.
 | --- | --- | --- |
 | `GetWhInventory` | `POST /RestWS/api/eretail/v4/stock/getWhInventory` | Field names per the published specification |
 | `ShipmentDetail` | `POST /RestWS/api/eretail/v1/order/shipmentDetail` | Field names per the published specification |
-| `CreateOrder` | `POST /RestWS/api/eretail/v4/order/create` | Header and line field names per the specification; **the `ship*` address field names are not enumerated there and are unverified** |
+| `CreateOrder` | `POST /RestWS/api/eretail/v4/order/create` | Outer `order` object, `items` lines and documented contact fields; tenant acceptance remains unverified (B17). See [contract review](vinculum-order-create-review.md). |
+
+### Create orders use the published v4 envelope and acknowledgement
+
+The request is `{"order":{...}}`. Header `orderAmount` carries the original
+order total; `items` carries line records. Numeric fields follow the documented
+example's quoted representation. `customerName`, `shipPinCode`, `shipPhone1` and
+`shipEmail1` replace the old guessed names. Shipping and billing fields are
+validated before HTTP when no `customerCode` is supplied. EasyEcom's distinct
+billing fields and `invoice_currency_code` are retained; missing contact data can
+still come from the matching webhook. Selling price is never invented as MRP.
+
+`reqType=create` and the original order number remain stable on retries. Create
+responses must contain a successful `requestStatus` and an `outputKey` or
+`dsOrderNo`; a successful HTTP status alone cannot complete the workflow.
+Duplicate rejections retain the existing configured-code/keyword handling. That
+path reports the source order reference because it does not return a generated
+WMS identifier; tenant duplicate behaviour still requires verification (B18).
+
+Staging verification uses newly created orders after configuration and worker
+restart. This correction does not migrate previously prepared order requests.
 
 ### Dispatch, and why it never moves backwards
 
@@ -313,6 +333,9 @@ would read a rejection as a successful empty page. Envelope errors are
 **non-retryable** — they describe a decision about the request. Transient
 conditions arrive as 5xx and are retried by the HTTP client.
 
+For create orders, `requestStatus.status`, `errorCode` and `errorDesc` are also
+checked, and missing vendor identifiers are rejected.
+
 Numbers arrive as JSON numbers in some fields and as quoted strings in
 others, so the `dto.Flex*` types accept both.
 
@@ -321,7 +344,7 @@ others, so the `dto.Flex*` types accept both.
 | Item | Status |
 | --- | --- |
 | `responseCode` success value | `0` assumed. The specification names the field without enumerating values. Failing safe: a wrong assumption reports every call as an error rather than swallowing failures. |
-| Request date format | `2006-01-02 15:04:05`. The specification documents the date parameters without their format. One constant, `dto.RequestTimeLayout`. |
+| Request date format | Read endpoints retain `2006-01-02 15:04:05` (`dto.RequestTimeLayout`). Create orders use the documented example `DD/MM/YYYY HH:mm:ss` and explicitly configured timezone; tenant acceptance remains pending. |
 | Response date formats | Several layouts are tried in turn, because the format of a given field is not stated and refusing a shipment over a date format loses tracking the customer is waiting for. |
 | Dispatch status values | Normalised by keyword. An unrecognised label becomes `UNKNOWN` and keeps its original text in `SourceStatus`, so nothing is silently reclassified. |
 | `reqType`, `filterBy`, `fulfillmentLocation`, `status[]` | Documented parameters with no published value set. Passed through when set, omitted when not, so a value BCPL supply later needs no code change. |
@@ -329,7 +352,7 @@ others, so the `dto.Flex*` types accept both.
 | `qty` versus `committedQty` | Assumption A1. See below. |
 | The `ship*` address field names | Not enumerated in the specification. The nine fields follow the documented prefix. **This is the one unverified item here that fails quietly** — Vinculum would accept an order and ship it with a field missing. |
 | The duplicate-order rejection | The specification states that a duplicate is rejected but gives neither code nor wording. Matched by keyword, overridable with `VINCULUM_DUPLICATE_ORDER_CODES`. Failing to recognise one is safe: the run fails visibly and the vendor did the rejecting, so nothing is duplicated. |
-| `orderType`, `paymentType` values | Named as header fields without an enumerated set. One constant each. |
+| `orderType`, `paymentType`, initial status and timezone | Explicit deployment settings, with no guessed defaults. Order types come from tenant master data. Missing settings fail mapping before HTTP. |
 
 Test payloads under `app/integrations/vinculum/mapper/testdata/` are built
 from the specification, not captured from BCPL: no test credentials have been

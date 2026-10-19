@@ -16,6 +16,8 @@ import (
 	"errors"
 	"strings"
 	"time"
+
+	"github.com/gluzo/integration-gateway/app/integrations/vinculum/mapper"
 )
 
 // PlatformName is how Vinculum is identified in routing, logs and the
@@ -28,9 +30,13 @@ const DefaultBaseURL = "https://erp.vineretail.com"
 // LocationLength is the width Vinculum documents for orderLocation.
 const LocationLength = 3
 
+// OrderOptions is configuration for tenant master values and order timestamps.
+type OrderOptions = mapper.OrderOptions
+
 // Config holds the credentials and tuning for outbound Vinculum calls.
 type Config struct {
-	BaseURL string
+	OrderOptions OrderOptions
+	BaseURL      string
 
 	// APIOwner and APIKey are sent as the ApiOwner and ApiKey headers on
 	// every request.

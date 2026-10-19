@@ -15,6 +15,26 @@ func lookupFrom(m map[string]string) config.Lookup {
 	}
 }
 
+func TestVinculumOrderSettingsRequireExplicitTenantConfiguration(t *testing.T) {
+	base := map[string]string{"DATABASE_URL": "postgres://user:secret@localhost:5432/gateway", "REDIS_URL": "redis://localhost:6379/0"}
+	cfg, err := config.LoadFrom(lookupFrom(base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Vinculum.PrepaidOrderType != "" || cfg.Vinculum.CODOrderType != "" || cfg.Vinculum.PrepaidPaymentType != "" || cfg.Vinculum.CODPaymentType != "" || cfg.Vinculum.OrderStatus != "" || cfg.Vinculum.OrderTimezone != "" {
+		t.Fatalf("tenant settings were guessed: %+v", cfg.Vinculum)
+	}
+	settings := map[string]string{"VINCULUM_ORDER_TYPE_PREPAID": "TEST-PREPAID", "VINCULUM_ORDER_TYPE_COD": "TEST-COD", "VINCULUM_PAYMENT_TYPE_PREPAID": "TEST-ONLINE", "VINCULUM_PAYMENT_TYPE_COD": "TEST-CASH", "VINCULUM_ORDER_STATUS": "TEST-STATUS", "VINCULUM_ORDER_TIMEZONE": "Asia/Kolkata", "VINCULUM_ORDER_MODE": "wms", "VINCULUM_ORDER_TAX_INCLUSIVE": "Yes"}
+	cfg, err = config.LoadFrom(lookupFrom(merge(base, settings)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := cfg.Vinculum
+	if c.PrepaidOrderType != "TEST-PREPAID" || c.CODOrderType != "TEST-COD" || c.PrepaidPaymentType != "TEST-ONLINE" || c.CODPaymentType != "TEST-CASH" || c.OrderStatus != "TEST-STATUS" || c.OrderTimezone != "Asia/Kolkata" || c.OrderMode != "wms" || c.OrderTaxInclusive != "Yes" {
+		t.Fatalf("settings not loaded: %+v", c)
+	}
+}
+
 func merge(base map[string]string, extra map[string]string) map[string]string {
 	out := make(map[string]string, len(base)+len(extra))
 	for k, v := range base {
