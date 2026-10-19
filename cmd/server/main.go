@@ -27,6 +27,7 @@ import (
 	"github.com/gluzo/integration-gateway/app/dotenv"
 	"github.com/gluzo/integration-gateway/app/event"
 	"github.com/gluzo/integration-gateway/app/health"
+	"github.com/gluzo/integration-gateway/app/httpclient"
 	"github.com/gluzo/integration-gateway/app/httpserver"
 	"github.com/gluzo/integration-gateway/app/idempotency"
 	"github.com/gluzo/integration-gateway/app/integrations/easyecom"
@@ -141,12 +142,13 @@ func run() error {
 		return err
 	}
 	defer func() { _ = recorder.Close() }()
+	detailedLog := detailedHTTPLogger(cfg, recorder)
 
 	credentials := auth.NewStore(pool)
 	idempotencyStore := idempotency.NewPostgresStore(pool)
 	integrationRouting := cfg.OrderRoutingMode == config.OrderRoutingIntegration
 	easyecomWebhook := webhook.NewHandler(easyecom.WebhookParser{IntegrationRouting: integrationRouting}, idempotencyStore, jobQueue, logger,
-		webhook.WithRecorder(recorder), webhook.WithIntegrationRouting(integrationRouting))
+		webhook.WithRecorder(recorder), webhook.WithIntegrationRouting(integrationRouting), webhook.WithDetailedLog(detailedLog))
 
 	stateRepo, err := workflowstate.NewFileRepository(cfg.Storage.WorkflowDirectory)
 	if err != nil {
@@ -346,6 +348,13 @@ func run() error {
 	return errors.Join(failures...)
 }
 
+func detailedHTTPLogger(cfg *config.Config, recorder intlog.Recorder) *intlog.HTTPLogger {
+	if !cfg.Storage.DetailedLogging {
+		return nil
+	}
+	return intlog.NewHTTPLogger(recorder, cfg.Storage.DetailedLogMaxBodyBytes)
+}
+
 // buildWorker assembles the adapters, the ORDER_SYNC workflow and the worker.
 // Outbound credentials are validated here, so an instance that only receives
 // webhooks (WORKER_ENABLED=false) can run without them.
@@ -360,6 +369,7 @@ func buildWorker(
 	recorder intlog.Recorder,
 	logger *slog.Logger,
 ) (*worker.Worker, error) {
+	detailedLog := detailedHTTPLogger(cfg, recorder)
 	easyecomClient, err := easyecom.NewClient(easyecom.Config{
 		BaseURL:     cfg.EasyEcom.BaseURL,
 		APIKey:      cfg.EasyEcom.APIKey,
@@ -368,7 +378,7 @@ func buildWorker(
 		Password:    cfg.EasyEcom.Password,
 		LocationKey: cfg.EasyEcom.LocationKey,
 		Timeout:     cfg.EasyEcom.Timeout,
-	}, easyecom.WithLogger(logger))
+	}, easyecom.WithLogger(logger), easyecom.WithHTTPOptions(httpclient.WithDetailedLog(detailedLog)))
 	if err != nil {
 		return nil, fmt.Errorf("configure EasyEcom client (set WORKER_ENABLED=false for an intake-only instance): %w", err)
 	}
@@ -389,7 +399,7 @@ func buildWorker(
 			OrderRateWindow:     cfg.Vinculum.OrderRateWindow,
 
 			Timeout: cfg.Vinculum.Timeout,
-		}, vinculum.WithLogger(logger))
+		}, vinculum.WithLogger(logger), vinculum.WithHTTPOptions(httpclient.WithDetailedLog(detailedLog)))
 		if err != nil {
 			return nil, fmt.Errorf("configure Vinculum client (leave VINCULUM_API_OWNER empty for an instance with no vendor): %w", err)
 		}

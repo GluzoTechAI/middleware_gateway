@@ -39,12 +39,18 @@ type Handler struct {
 	publisher          queue.Publisher
 	logger             *slog.Logger
 	recorder           intlog.Recorder
+	detailedLog        *intlog.HTTPLogger
 	now                func() time.Time
 	newJobID           func() string
 }
 
 // Option configures a Handler.
 type Option func(*Handler)
+
+// WithDetailedLog enables sanitized webhook request and acknowledgement capture.
+func WithDetailedLog(l *intlog.HTTPLogger) Option {
+	return func(h *Handler) { h.detailedLog = l }
+}
 
 // WithIntegrationRouting selects the authenticated pipeline, never a
 // payload-supplied integration ID or warehouse, for order routing.
@@ -94,6 +100,9 @@ type eventResult struct {
 func (h *Handler) Handle(c *gin.Context) {
 	ctx := c.Request.Context()
 	requestID := correlation.FromContext(ctx)
+	var body []byte
+	record, flush := h.capture(c)
+	defer func() { flush(body) }()
 
 	platform, ok := auth.PlatformFromContext(ctx)
 	if !ok {
@@ -165,7 +174,7 @@ func (h *Handler) Handle(c *gin.Context) {
 			return
 		}
 
-		result, err := h.admit(c, *ev)
+		result, err := h.admit(c, *ev, record)
 		if err != nil {
 			h.logger.ErrorContext(ctx, "webhook admission failed",
 				slog.String("platform", platform.Name),
@@ -201,7 +210,7 @@ func (h *Handler) Handle(c *gin.Context) {
 // admit claims the idempotency key and publishes the job. On a duplicate it
 // reports the earlier correlation ID; on a publish failure it releases the
 // claim so the sender's retry can be accepted.
-func (h *Handler) admit(c *gin.Context, ev event.Event) (eventResult, error) {
+func (h *Handler) admit(c *gin.Context, ev event.Event, record func(intlog.Entry)) (eventResult, error) {
 	ctx := c.Request.Context()
 	claim, err := h.idempotency.Claim(ctx, idempotency.Record{
 		Key:           ev.IdempotencyKey,
@@ -223,7 +232,7 @@ func (h *Handler) admit(c *gin.Context, ev event.Event) (eventResult, error) {
 			slog.String("original_correlation_id", claim.Existing.CorrelationID),
 			slog.String("original_status", string(claim.Existing.Status)),
 		)
-		h.recorder.Record(ctx, intlog.Entry{
+		record(intlog.Entry{
 			Timestamp:       h.now(),
 			CorrelationID:   claim.Existing.CorrelationID,
 			Platform:        ev.Platform,
@@ -271,7 +280,7 @@ func (h *Handler) admit(c *gin.Context, ev event.Event) (eventResult, error) {
 		slog.String("job_id", job.ID),
 		slog.String("correlation_id", ev.CorrelationID),
 	)
-	h.recorder.Record(ctx, intlog.Entry{
+	record(intlog.Entry{
 		Timestamp:       h.now(),
 		CorrelationID:   ev.CorrelationID,
 		Platform:        ev.Platform,

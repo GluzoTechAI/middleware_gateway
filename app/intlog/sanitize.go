@@ -1,6 +1,7 @@
 package intlog
 
 import (
+	"encoding/json"
 	"net/http"
 	"regexp"
 	"strings"
@@ -21,6 +22,13 @@ var DefaultSecretKeys = []string{
 	"jwt_token",
 	"api_key",
 	"apikey",
+	"apiowner",
+	"api-owner",
+	"location_key",
+	"locationkey",
+	"signature",
+	"platform-key",
+	"platform_key",
 	"password",
 	"passwd",
 	"secret",
@@ -49,6 +57,7 @@ var DefaultPIIKeys = []string{
 // messages: "Bearer abc…", "password=…", "api_key: …".
 var secretPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)(bearer\s+)[A-Za-z0-9\-._~+/]+=*`),
+	regexp.MustCompile(`(?i)(basic\s+)[A-Za-z0-9+/]+=*`),
 	regexp.MustCompile(`(?i)\b(password|passwd|secret|client_secret|token|access_token|refresh_token|jwt_token|api_key|apikey|x-api-key)(["']?\s*[=:]\s*["']?)[^\s"'&,;]+`),
 }
 
@@ -118,6 +127,19 @@ func (s *Sanitizer) Headers(h http.Header) map[string]any {
 
 // Text masks credential-looking fragments inside free text.
 func (s *Sanitizer) Text(v string) string {
+	// Error snippets can themselves be JSON. Mask fields structurally before
+	// falling back to free-text patterns (which also handle partial snippets).
+	trimmed := strings.TrimSpace(v)
+	if strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") {
+		var parsed any
+		dec := json.NewDecoder(strings.NewReader(v))
+		dec.UseNumber()
+		if json.Valid([]byte(v)) && dec.Decode(&parsed) == nil {
+			if data, err := json.Marshal(s.value("", decodeNestedJSON(parsed, 0))); err == nil {
+				return string(data)
+			}
+		}
+	}
 	for _, p := range secretPatterns {
 		v = p.ReplaceAllString(v, "${1}${2}"+Redacted)
 	}
@@ -160,6 +182,11 @@ func (s *Sanitizer) value(key string, v any) any {
 			return maskPII(t)
 		}
 		return s.Text(t)
+	case json.Number:
+		if key != "" && s.isPIIKey(key) {
+			return maskPII(t.String())
+		}
+		return t
 	default:
 		return v
 	}

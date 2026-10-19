@@ -67,7 +67,8 @@ instruction: `reset --hard`, `clean -fd`, `rebase`, `commit --amend`,
   passed in.
 - Queue types never appear in a workflow action's signature.
 - Webhook handlers call no vendor synchronously.
-- No credential, and no raw payload body, reaches any log.
+- No credential, and no raw payload body, reaches any log. Explicitly enabled
+  detailed HTTP logging may record bounded, parsed and sanitized payloads.
 
 Breaking one of these is a design conversation, not an edit. Stop and explain
 the trade-off first.

@@ -248,7 +248,13 @@ func (e *Executor) runStep(ctx context.Context, state *State, step Step, rec *Ac
 			return err
 		}
 
-		err := e.execute(ctx, step, policy, state)
+		callCtx := intlog.WithCallContext(ctx, intlog.Entry{
+			CorrelationID: state.CorrelationID, Workflow: state.WorkflowName,
+			Platform: state.Platform, Integration: state.DestinationPlatform(), IntegrationID: state.IntegrationID,
+			ExternalOrderID: state.Event.ExternalOrderID, OrderID: state.Result(ResultDestinationOrderID),
+			Action: step.Action.Name(), Attempt: rec.Attempt,
+		})
+		err := e.execute(callCtx, step, policy, state)
 		completed := e.now()
 		rec.CompletedAt = &completed
 		rec.DurationMS = completed.Sub(started).Milliseconds()

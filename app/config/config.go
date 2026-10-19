@@ -209,10 +209,12 @@ type Redis struct {
 
 // Storage holds file-system locations for execution logs and workflow state.
 type Storage struct {
-	LogDirectory         string
-	WorkflowDirectory    string
-	LogRetentionDays     int
-	LogRetentionInterval time.Duration
+	DetailedLogging         bool
+	DetailedLogMaxBodyBytes int
+	LogDirectory            string
+	WorkflowDirectory       string
+	LogRetentionDays        int
+	LogRetentionInterval    time.Duration
 }
 
 // Lookup resolves an environment variable, reporting whether it was set.
@@ -256,10 +258,12 @@ func LoadFrom(lookup Lookup) (*Config, error) {
 			ConnectTimeout: r.duration("REDIS_CONNECT_TIMEOUT", 5*time.Second),
 		},
 		Storage: Storage{
-			LogDirectory:         r.str("LOG_DIRECTORY", "./storage/logs"),
-			WorkflowDirectory:    r.str("WORKFLOW_DIRECTORY", "./storage/workflows"),
-			LogRetentionDays:     r.int("LOG_RETENTION_DAYS", 30),
-			LogRetentionInterval: r.duration("LOG_RETENTION_INTERVAL", time.Hour),
+			DetailedLogging:         r.bool("DETAILED_LOG_ENABLED", false),
+			DetailedLogMaxBodyBytes: r.int("DETAILED_LOG_MAX_BODY_BYTES", 256<<10),
+			LogDirectory:            r.str("LOG_DIRECTORY", "./storage/logs"),
+			WorkflowDirectory:       r.str("WORKFLOW_DIRECTORY", "./storage/workflows"),
+			LogRetentionDays:        r.int("LOG_RETENTION_DAYS", 30),
+			LogRetentionInterval:    r.duration("LOG_RETENTION_INTERVAL", time.Hour),
 		},
 		Admin: Admin{
 			LogViewerToken: r.str("ADMIN_LOG_VIEWER_TOKEN", ""),
@@ -360,6 +364,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Storage.LogDirectory == "" {
 		errs = append(errs, errors.New("LOG_DIRECTORY is required"))
+	}
+	if c.Storage.DetailedLogMaxBodyBytes < 1 || c.Storage.DetailedLogMaxBodyBytes > 256<<10 {
+		errs = append(errs, errors.New("DETAILED_LOG_MAX_BODY_BYTES must be between 1 and 262144"))
 	}
 	if c.Storage.WorkflowDirectory == "" {
 		errs = append(errs, errors.New("WORKFLOW_DIRECTORY is required"))

@@ -51,6 +51,27 @@
     <td>{{.Integration}}</td>
     <td class="wrapcell">{{with .Error}}<span class="badge">{{.Category}}</span> {{.Message}}{{if .ExternalMessage}} — {{.ExternalMessage}}{{end}}{{if .Detail}} <span class="muted">({{.Detail}})</span>{{end}}{{end}}{{range $k, $v := .Details}} <span class="muted">{{$k}}={{$v}}</span>{{end}}</td>
   </tr>
+  {{if or .Request .Response}}
+  <tr><td colspan="7" class="wrapcell">
+    <details class="http-exchange">
+      <summary>Request and response data{{with index .Details "operation"}} · {{.}}{{end}}</summary>
+      <p class="muted">Credentials and personal data are masked. Large or unsupported bodies show an omission reason.</p>
+      {{with .Request}}
+      <section class="log-data">
+        <h3>Request <button type="button" class="copy-log">Copy request</button></h3>
+        <pre tabindex="0">{{prettyJSON .}}</pre>
+      </section>
+      {{end}}
+      {{with .Response}}
+      <section class="log-data">
+        <h3>Response <button type="button" class="copy-log">Copy response</button></h3>
+        <pre tabindex="0">{{prettyJSON .}}</pre>
+      </section>
+      {{else}}<p class="muted">No HTTP response received.</p>{{end}}
+      <span class="copy-status muted" role="status" aria-live="polite"></span>
+    </details>
+  </td></tr>
+  {{end}}
   {{end}}
   </tbody>
 </table>
@@ -58,4 +79,30 @@
 {{else}}
 <p class="muted">No log entries for this correlation ID.</p>
 {{end}}
+<script>
+document.addEventListener('click', async function(event) {
+  const button = event.target.closest('.copy-log');
+  if (!button) return;
+  const text = button.closest('.log-data').querySelector('pre').textContent;
+  const status = button.closest('.http-exchange').querySelector('.copy-status');
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const area = document.createElement('textarea');
+      area.value = text;
+      area.style.position = 'fixed';
+      area.style.opacity = '0';
+      document.body.appendChild(area);
+      try {
+        area.select();
+        if (!document.execCommand('copy')) throw new Error('Copy unavailable');
+      } finally { area.remove(); button.focus(); }
+    }
+    status.textContent = 'Copied to clipboard.';
+  } catch (error) {
+    status.textContent = 'Copy unavailable. Select and copy the text below manually.';
+  }
+});
+</script>
 {{template "foot"}}

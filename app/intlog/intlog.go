@@ -57,8 +57,8 @@ type Entry struct {
 	Attempt    int            `json:"attempt,omitempty"`
 	DurationMS int64          `json:"duration_ms,omitempty"`
 	Error      *apperror.Info `json:"error,omitempty"`
-	// Request and Response hold sanitised metadata about an external call
-	// (method, URL path, status, bounded body excerpt). Never credentials.
+	// Request and Response hold optional, sanitized HTTP exchange data
+	// (method, URL, status, headers and bounded parsed body). Never credentials.
 	Request  map[string]any `json:"request,omitempty"`
 	Response map[string]any `json:"response,omitempty"`
 	Details  map[string]any `json:"details,omitempty"`

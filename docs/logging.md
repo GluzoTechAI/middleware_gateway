@@ -67,9 +67,53 @@ Every entry passes through `intlog.Sanitizer` before it is written:
 - Personal data under keys such as `email`, `phone`, `contact_num` is masked
   (`a***@example.com`, `******1234`).
 
-The HTTP client never logs headers or query strings at all, and strips query
-strings from transport errors, so credentials do not reach the sanitiser in
-the first place.
+The HTTP client's application log excludes headers, bodies and query strings.
+Transport errors have query strings and URL user information removed.
+
+### Detailed HTTP capture is disabled by default
+
+Set the following in the server environment (or `.env`), then restart the gateway:
+
+```dotenv
+DETAILED_LOG_ENABLED=true
+DETAILED_LOG_MAX_BODY_BYTES=262144
+```
+
+With `false` (the default), the existing summary entries and timeline remain.
+With `true`, new webhook entries include the received request and the returned
+acknowledgement, including headers and bodies. A batched webhook appears under
+each event's correlation ID; duplicate deliveries remain attached to the original
+run. Authenticated rejections are captured too. Requests rejected by authentication
+middleware never reach the webhook handler and are not captured here.
+
+Every outbound API attempt through the shared HTTP client produces a separate
+`HTTP_CALL` entry, including login/token calls, retries, failures and successful
+calls. Each entry includes the API name, operation, method, URL without credentials,
+sanitized query parameters, request headers/body, response status/headers/body,
+duration and error. Transport failures show the request and error without a response.
+`workflow_action` and `workflow_attempt` link calls to the enclosing action;
+the entry's `attempt` is the HTTP attempt number. HTTP success describes the
+transport status; decoding errors or vendor business rejections are reported by
+the subsequent workflow action outcome.
+
+Capture parses JSON and form data before masking secret keys and personal fields.
+JSON embedded inside form fields or JSON strings is parsed for masking too.
+Authorization, API keys, API owner, location keys, cookies, signatures and tokens
+are masked before passing the entry to the recorder. The file recorder sanitizes
+again before persistence. No raw payload is written to logs.
+
+The per-body limit is configurable from 1 to 262144 bytes (256 KB). Larger bodies
+are omitted as a whole with `body_omitted` and `body_bytes`; partial JSON could
+expose credentials. Invalid JSON and unsupported encodings also show an omission
+reason. Headers and query parameters each have a 16 KB capture limit. API request
+and response processing is unchanged by these capture limits. Detailed entries use
+the same UTC day files, admin authentication and retention as summary logs.
+
+On the timeline, expand **Request and response data** to inspect formatted JSON.
+**Copy request** and **Copy response** copy the displayed metadata, headers and body
+together. Clipboard failures show a message and allow manual text selection.
+The JSON timeline endpoint exposes the same `request` and `response` fields.
+Enabling capture affects future traffic only; historical payloads cannot be restored.
 
 ### Retention
 

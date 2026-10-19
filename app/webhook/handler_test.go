@@ -49,6 +49,7 @@ func (f failingStore) Claim(context.Context, idempotency.Record) (idempotency.Cl
 }
 
 type env struct {
+	detailedLogging    bool
 	integrationRouting bool
 	router             *gin.Engine
 	logs               *bytes.Buffer
@@ -91,7 +92,12 @@ func newEnv(t *testing.T, opts ...envOption) *env {
 		store, publisher = opt(e)
 	}
 	handler := webhook.NewHandler(easyecom.WebhookParser{IntegrationRouting: e.integrationRouting}, store, publisher, logger,
-		webhook.WithRecorder(e.recorder), webhook.WithIntegrationRouting(e.integrationRouting))
+		webhook.WithRecorder(e.recorder), webhook.WithIntegrationRouting(e.integrationRouting), webhook.WithDetailedLog(func() *intlog.HTTPLogger {
+			if e.detailedLogging {
+				return intlog.NewHTTPLogger(e.recorder, 1024)
+			}
+			return nil
+		}()))
 
 	r := gin.New()
 	r.Use(middleware.Correlation(), middleware.BodyLimit(1024))

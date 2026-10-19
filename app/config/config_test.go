@@ -39,6 +39,29 @@ func TestLoadFrom(t *testing.T) {
 		check   func(t *testing.T, cfg *config.Config)
 	}{
 		{
+			name: "detailed logging is opt in",
+			env:  base,
+			check: func(t *testing.T, cfg *config.Config) {
+				if cfg.Storage.DetailedLogging || cfg.Storage.DetailedLogMaxBodyBytes != 262144 {
+					t.Fatalf("detail defaults: %+v", cfg.Storage)
+				}
+			},
+		},
+		{
+			name: "detailed logging can be enabled",
+			env:  merge(base, map[string]string{"DETAILED_LOG_ENABLED": "true", "DETAILED_LOG_MAX_BODY_BYTES": "4096"}),
+			check: func(t *testing.T, cfg *config.Config) {
+				if !cfg.Storage.DetailedLogging || cfg.Storage.DetailedLogMaxBodyBytes != 4096 {
+					t.Fatalf("detail settings: %+v", cfg.Storage)
+				}
+			},
+		},
+		{
+			name:    "detailed body limit cannot exceed reader capacity",
+			env:     merge(base, map[string]string{"DETAILED_LOG_MAX_BODY_BYTES": "262145"}),
+			wantErr: "DETAILED_LOG_MAX_BODY_BYTES must be between",
+		},
+		{
 			name: "defaults apply when only required values are set",
 			env:  base,
 			check: func(t *testing.T, cfg *config.Config) {

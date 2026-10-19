@@ -26,6 +26,7 @@ import (
 
 	"github.com/gluzo/integration-gateway/app/apperror"
 	"github.com/gluzo/integration-gateway/app/correlation"
+	"github.com/gluzo/integration-gateway/app/intlog"
 )
 
 // Defaults applied by New.
@@ -76,6 +77,7 @@ type Client struct {
 	maxResponseBytes int64
 	logger           *slog.Logger
 	userAgent        string
+	detailedLog      *intlog.HTTPLogger
 	sleep            func(ctx context.Context, d time.Duration) error
 	randFloat        func() float64
 }
@@ -97,6 +99,9 @@ func WithMaxResponseBytes(n int64) Option { return func(c *Client) { c.maxRespon
 
 // WithLogger sets the logger used for per-attempt debug records.
 func WithLogger(l *slog.Logger) Option { return func(c *Client) { c.logger = l } }
+
+// WithDetailedLog enables per-attempt request/response capture. Nil disables it.
+func WithDetailedLog(l *intlog.HTTPLogger) Option { return func(c *Client) { c.detailedLog = l } }
 
 // WithUserAgent sets the User-Agent header.
 func WithUserAgent(ua string) Option { return func(c *Client) { c.userAgent = ua } }
@@ -241,7 +246,7 @@ func (c *Client) DoJSON(ctx context.Context, req Request, out any) (*Response, e
 	return resp, nil
 }
 
-func (c *Client) attempt(ctx context.Context, req Request, target string, body []byte, contentType string, attempt int) (*Response, *apperror.Error) {
+func (c *Client) attempt(ctx context.Context, req Request, target string, body []byte, contentType string, attempt int) (result *Response, resultErr *apperror.Error) {
 	attemptCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
@@ -269,15 +274,46 @@ func (c *Client) attempt(ctx context.Context, req Request, target string, body [
 	}
 
 	started := time.Now()
+	var responseHeaders http.Header
+	var responseBody []byte
+	var responseStatus int
+	if c.detailedLog != nil {
+		// Capture after defaults and credentials have been applied, before sending.
+		request := c.detailedLog.Request(httpReq.Method, httpReq.URL, httpReq.Header, body)
+		defer func() {
+			e := intlog.CallEntry(ctx)
+			e.Details = map[string]any{"workflow_action": e.Action, "workflow_attempt": e.Attempt, "operation": req.Operation, "api": c.name}
+			e.Action, e.Attempt = "HTTP_CALL", attempt
+			e.Timestamp, e.DurationMS = started.UTC(), time.Since(started).Milliseconds()
+			e.Status = intlog.StatusSuccess
+			if resultErr != nil {
+				e.Status = intlog.StatusFailed
+				e.Error = apperror.InfoOf(resultErr)
+			}
+			e.Request = request
+			if responseStatus != 0 {
+				e.Response = c.detailedLog.Response(responseStatus, responseHeaders, responseBody)
+				if result == nil {
+					e.Response["body_incomplete"] = true
+				}
+			}
+			c.detailedLog.Record(ctx, e)
+		}()
+	}
 	httpResp, err := c.http.Do(httpReq)
 	if err != nil {
+		if httpResp != nil {
+			responseStatus, responseHeaders = httpResp.StatusCode, httpResp.Header
+		}
 		aerr := c.classifyTransport(ctx, attemptCtx, err)
 		c.logAttempt(ctx, req, attempt, 0, time.Since(started), aerr)
 		return nil, c.fail(req, aerr)
 	}
 	defer httpResp.Body.Close()
+	responseStatus, responseHeaders = httpResp.StatusCode, httpResp.Header
 
 	data, err := io.ReadAll(io.LimitReader(httpResp.Body, c.maxResponseBytes+1))
+	responseBody = data
 	if err != nil {
 		aerr := c.classifyTransport(ctx, attemptCtx, err)
 		c.logAttempt(ctx, req, attempt, httpResp.StatusCode, time.Since(started), aerr)

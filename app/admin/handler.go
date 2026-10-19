@@ -10,6 +10,7 @@ package admin
 import (
 	"context"
 	"embed"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
@@ -77,6 +78,13 @@ func NewHandler(reader *intlog.Reader, states workflow.Repository, resumer Resum
 		// types from workflow state; accept both.
 		"mark": func(v any) string { return statusMark(fmt.Sprint(v)) },
 		"ms":   func(ms int64) string { return strconv.FormatInt(ms, 10) },
+		"prettyJSON": func(v any) string {
+			data, err := json.MarshalIndent(v, "", "  ")
+			if err != nil {
+				return "Could not format log data"
+			}
+			return string(data)
+		},
 	}).ParseFS(templateFS, "templates/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("admin: parse templates: %w", err)
