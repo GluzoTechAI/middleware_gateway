@@ -64,6 +64,33 @@ others; the `dto.Flex*` types accept both. Order collections arrive as a bare
 array (V2), as `{"orders": [...], "nextUrl": ...}` (V1) or as a single order
 object, and all three decode into the same `OrdersData`.
 
+### Successful order lookups retain missing customer details from the webhook
+
+Observed order `652462545` has customer and address data in its location-assignment
+webhook, while its successful GetOrderDetails response returns null customer name,
+phone, email and street address. The source adapter uses the API order for items,
+prices, quantities, payment, status and location, then fills only blank customer
+and address fields from the original per-order webhook. Existing API values win.
+Null, empty and whitespace-only contact strings are treated as missing.
+
+Enrichment requires the webhook identity, event external order ID and domain order
+external ID to agree. The webhook identity uses `order_id`, falling back to
+`invoice_id` only when `order_id` is absent, matching the existing order mapper.
+A malformed, absent or differently identified webhook leaves the order unchanged.
+The webhook does not have to provide valid line items to supply its contact fields;
+line items still come from the API. Both shipping and billing receive the fallback
+under the existing adapter's shared-address policy. If contact data is missing in
+both sources, the vendor adapter's shipping validation continues to block submission.
+
+The optional `vendor.OrderContactEnricher` capability also runs at `MAP_ORDER`,
+before SKU translation and vendor preparation. After deployment, an existing run
+failed at mapping can use **Resume from MAP_ORDER** to enrich its saved order from
+its saved webhook. This makes no additional HTTP request and does not rerun
+`FETCH_ORDER`, alter the original event, rewrite historical log entries, or change
+already prepared documents for runs resuming at submission. The enriched order
+is persisted with the action outcome. Other origin adapters need no interface
+change and can omit this optional capability.
+
 ### Webhooks
 
 The server defaults to `ORDER_ROUTING_MODE=integration`: the authenticated

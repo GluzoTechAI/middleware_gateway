@@ -222,6 +222,16 @@ func (w *orderSync) mapOrder(ctx context.Context, state *workflow.State) error {
 	if state.Order == nil {
 		return apperror.New(apperror.Workflow, "order has not been fetched")
 	}
+	// Reapply the origin's pure contact fallback for saved runs that reached
+	// MAP_ORDER before enrichment was available. No refetch or vendor call.
+	src, err := w.origin(state)
+	if err != nil {
+		return err
+	}
+	if enricher, ok := src.(vendor.OrderContactEnricher); ok {
+		enriched := enricher.EnrichOrderContact(*state.Order, state.Event)
+		state.Order = &enriched
+	}
 	receiver, route, err := w.route(state)
 	if err != nil {
 		return err

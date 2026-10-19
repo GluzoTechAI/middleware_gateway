@@ -197,6 +197,14 @@ type Origin interface {
 	FetchOrder(ctx context.Context, ev event.Event) (order.Order, error)
 }
 
+// OrderContactEnricher optionally fills missing customer/address fields from
+// the original event. It must be pure, verify the order identity, preserve
+// populated values, and leave items, prices, routing and order status intact.
+// MAP_ORDER also uses it for saved runs fetched before this enrichment existed.
+type OrderContactEnricher interface {
+	EnrichOrderContact(o order.Order, ev event.Event) order.Order
+}
+
 // StockResult summarises a stock push into the origin platform.
 type StockResult struct {
 	Updated int

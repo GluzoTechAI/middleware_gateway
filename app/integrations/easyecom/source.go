@@ -26,6 +26,8 @@ import (
 // order (no reference, or a permanent not-found) the webhook payload, which
 // carries the same order representation, is used instead; transient API
 // failures propagate so the engine retries them.
+// Missing customer/address fields in a successful response are filled from
+// the webhook only when its order ID matches both the event and fetched order.
 type Source struct {
 	client *Client
 	logger *slog.Logger
@@ -68,7 +70,11 @@ func (s *Source) FetchOrder(ctx context.Context, ev event.Event) (order.Order, e
 			slog.String("external_order_id", ev.ExternalOrderID), slog.String("correlation_id", ev.CorrelationID))
 		return orderFromPayload(ev)
 	}
-	return mapper.ToDomainOrder(dto)
+	o, err := mapper.ToDomainOrder(dto)
+	if err != nil {
+		return order.Order{}, err
+	}
+	return s.EnrichOrderContact(o, ev), nil
 }
 
 // pickOrder selects the order matching externalID, or the only order when
