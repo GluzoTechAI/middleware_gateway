@@ -20,13 +20,17 @@ const RoutingKeyWarehouse = "warehouse_id"
 // Each order object in the payload becomes one event. The original object's
 // bytes travel as the event payload so the worker can decode it with the
 // same DTO without losing fields the DTO does not model.
-type WebhookParser struct{}
+type WebhookParser struct {
+	// IntegrationRouting permits absent warehouse IDs. The authenticated
+	// webhook handler supplies the integration routing key after parsing.
+	IntegrationRouting bool
+}
 
 // Platform implements webhook.Parser.
 func (WebhookParser) Platform() string { return PlatformName }
 
 // Parse implements webhook.Parser.
-func (WebhookParser) Parse(eventType string, body []byte) ([]event.Event, error) {
+func (p WebhookParser) Parse(eventType string, body []byte) ([]event.Event, error) {
 	switch eventType {
 	case event.OrderCreated, event.OrderConfirmed, event.OrderCancelled:
 	case event.InventoryUpdated, event.TrackingUpdated:
@@ -57,7 +61,7 @@ func (WebhookParser) Parse(eventType string, body []byte) ([]event.Event, error)
 			return nil, validationError(fmt.Sprintf("order %d has neither order_id nor invoice_id", i))
 		}
 		warehouse := strings.TrimSpace(o.WarehouseID.String())
-		if warehouse == "" {
+		if warehouse == "" && !p.IntegrationRouting {
 			return nil, validationError(fmt.Sprintf("order %s has no warehouse_id", orderID))
 		}
 

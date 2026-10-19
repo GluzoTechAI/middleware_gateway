@@ -34,6 +34,30 @@ func TestRoutingStore(t *testing.T) {
 		t.Fatalf("CreateIntegration other: %v", err)
 	}
 
+	// Integration routing resolves without any warehouse route rows.
+	direct, err := routes.ResolveIntegration(ctx, integ.ID)
+	if err != nil || direct.IntegrationID != integ.ID || direct.SourcePlatform != src.Name || direct.DestinationPlatform != dst.Name {
+		t.Fatalf("ResolveIntegration without routes = %+v, %v", direct, err)
+	}
+	otherDirect, err := routes.ResolveIntegration(ctx, otherInteg.ID)
+	if err != nil || otherDirect.IntegrationID != otherInteg.ID {
+		t.Fatalf("ResolveIntegration other = %+v, %v", otherDirect, err)
+	}
+	if _, err := routes.ResolveIntegration(ctx, uuid.New()); !errors.Is(err, routing.ErrNoRoute) {
+		t.Fatalf("unknown integration: %v", err)
+	}
+	for _, platform := range []auth.Platform{src, dst} {
+		if err := creds.SetPlatformStatus(ctx, platform.Name, auth.StatusDisabled); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := routes.ResolveIntegration(ctx, integ.ID); !errors.Is(err, routing.ErrNoRoute) {
+			t.Fatalf("disabled platform %s resolved: %v", platform.Name, err)
+		}
+		if err := creds.SetPlatformStatus(ctx, platform.Name, auth.StatusActive); err != nil {
+			t.Fatal(err)
+		}
+	}
+
 	route, err := routes.AddRoute(ctx, integ.Name, routing.TypeWarehouse, "12345", "DEL", "bcpl-loc-key")
 	if err != nil {
 		t.Fatalf("AddRoute: %v", err)
@@ -111,6 +135,9 @@ func TestRoutingStore(t *testing.T) {
 	}
 	if _, err := routes.Resolve(ctx, integ.ID, key); !errors.Is(err, routing.ErrNoRoute) {
 		t.Fatalf("route of disabled integration resolved: err = %v", err)
+	}
+	if _, err := routes.ResolveIntegration(ctx, integ.ID); !errors.Is(err, routing.ErrNoRoute) {
+		t.Fatalf("disabled integration resolved directly: %v", err)
 	}
 	if err := creds.SetIntegrationStatus(ctx, integ.Name, auth.StatusActive); err != nil {
 		t.Fatalf("SetIntegrationStatus active: %v", err)

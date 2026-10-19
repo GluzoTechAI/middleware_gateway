@@ -21,6 +21,7 @@ import (
 	"github.com/gluzo/integration-gateway/app/idempotency"
 	"github.com/gluzo/integration-gateway/app/intlog"
 	"github.com/gluzo/integration-gateway/app/queue"
+	"github.com/gluzo/integration-gateway/app/routing"
 )
 
 // Handler processes webhooks for one platform.
@@ -32,17 +33,24 @@ import (
 // EasyEcom treat any 4xx/5xx as a failed delivery and eventually disable the
 // trigger.
 type Handler struct {
-	parser      Parser
-	idempotency idempotency.Store
-	publisher   queue.Publisher
-	logger      *slog.Logger
-	recorder    intlog.Recorder
-	now         func() time.Time
-	newJobID    func() string
+	integrationRouting bool
+	parser             Parser
+	idempotency        idempotency.Store
+	publisher          queue.Publisher
+	logger             *slog.Logger
+	recorder           intlog.Recorder
+	now                func() time.Time
+	newJobID           func() string
 }
 
 // Option configures a Handler.
 type Option func(*Handler)
+
+// WithIntegrationRouting selects the authenticated pipeline, never a
+// payload-supplied integration ID or warehouse, for order routing.
+func WithIntegrationRouting(enabled bool) Option {
+	return func(h *Handler) { h.integrationRouting = enabled }
+}
 
 // WithRecorder sets the integration log recorder that receives one
 // WEBHOOK_RECEIVED entry per event.
@@ -141,6 +149,9 @@ func (h *Handler) Handle(c *gin.Context) {
 		ev.Platform = platform.Name
 		ev.EventType = eventType
 		ev.IntegrationID = principal.Integration.ID.String()
+		if h.integrationRouting {
+			ev.RoutingKey = event.RoutingKey{Type: routing.TypeIntegration, Value: ev.IntegrationID}
+		}
 		ev.ReceivedAt = receivedAt
 		// The first event shares the request's correlation ID so the HTTP
 		// log line and the workflow line up; further events in a batch get

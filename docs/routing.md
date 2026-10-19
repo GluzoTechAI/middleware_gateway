@@ -1,5 +1,36 @@
 # Routing
 
+## Orders currently route by the authenticated integration
+
+`ORDER_ROUTING_MODE=integration` is the server default while the existing
+Logix connection uses a dedicated BCPL integration token. The handler stamps
+`integration_id=<authenticated integration UUID>` onto the event; a supplied
+warehouse or integration ID cannot select another pipeline. The worker reads
+the active integration and its active platforms from PostgreSQL. Only the
+EasyEcom-to-Vinculum platform pair is supported by this temporary resolver.
+
+`VINCULUM_LOCATION` supplies the order's `orderLocation` (BCPL: `PBW`). It is
+required when the integration-mode order worker is configured. This is one
+deployment-wide location: every eligible integration uses that location.
+`EASYECOM_LOCATION_KEY` supplies the origin reference; it is not the Vinculum
+location. No webhook warehouse or location field is required for routing in
+this mode. Warehouse fields, when supplied, remain in the payload and are
+decoded normally, including conflicting-alias validation.
+
+This mode ignores warehouse route rows, including disabled rows. Disable the
+integration to pause its incoming order pipeline. Existing authentication,
+idempotency, order validation, SKU mapping, retries and submission remain in
+effect. Stock and shipment schedules still enumerate `integration_routes`;
+this change does not create scheduled locations from the token.
+
+Set `ORDER_ROUTING_MODE=warehouse` on every intake and worker instance to
+restore the explicit warehouse matching described below. There is no
+automatic fallback between modes. Drain queued and in-progress orders before
+switching, because queued event keys and resolved workflow state persist.
+See [the revert guide](routing-revert.md) and the root `routing-revert.doc`.
+
+## Warehouse routing remains available for the future Logix connection
+
 Routing answers "which integration, and which destination location, should
 this event go to?" without a single warehouse or marketplace identifier in
 the code.

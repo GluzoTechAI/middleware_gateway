@@ -56,6 +56,12 @@ at a different file. Configuration itself still comes from the environment
 alone (`app/config`); the file is just a convenient way to populate it while
 developing.
 
+Orders default to `ORDER_ROUTING_MODE=integration`: the authenticated token
+selects the EasyEcom-to-Vinculum integration and `VINCULUM_LOCATION` selects
+the destination (BCPL: `PBW`). No warehouse route row is needed for orders.
+Set `ORDER_ROUTING_MODE=warehouse` to restore explicit warehouse matching.
+See [Routing](docs/routing.md) and [the revert guide](docs/routing-revert.md).
+
 ## Provision credentials
 
 `gatewayctl` reads the same `.env`, so `DATABASE_URL` needs no export:

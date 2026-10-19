@@ -144,7 +144,9 @@ func run() error {
 
 	credentials := auth.NewStore(pool)
 	idempotencyStore := idempotency.NewPostgresStore(pool)
-	easyecomWebhook := webhook.NewHandler(easyecom.WebhookParser{}, idempotencyStore, jobQueue, logger, webhook.WithRecorder(recorder))
+	integrationRouting := cfg.OrderRoutingMode == config.OrderRoutingIntegration
+	easyecomWebhook := webhook.NewHandler(easyecom.WebhookParser{IntegrationRouting: integrationRouting}, idempotencyStore, jobQueue, logger,
+		webhook.WithRecorder(recorder), webhook.WithIntegrationRouting(integrationRouting))
 
 	stateRepo, err := workflowstate.NewFileRepository(cfg.Storage.WorkflowDirectory)
 	if err != nil {
@@ -461,8 +463,17 @@ func buildWorker(
 		logger.Warn("no fulfilment vendor can receive orders: ORDER_SYNC is not available",
 			slog.String("reason", err.Error()))
 	} else {
+		var orderResolver routing.Resolver = routes
+		if cfg.OrderRoutingMode == config.OrderRoutingIntegration {
+			orderResolver, err = routing.NewIntegrationResolver(routes, easyecom.PlatformName, vinculum.PlatformName,
+				cfg.Vinculum.Location, cfg.EasyEcom.LocationKey)
+			if err != nil {
+				return nil, fmt.Errorf("ORDER_ROUTING_MODE=integration requires VINCULUM_LOCATION: %w", err)
+			}
+		}
+		logger.Info("order routing configured", slog.String("mode", cfg.OrderRoutingMode))
 		orderSync, err := ordersync.New(ordersync.Dependencies{
-			Resolver: routes,
+			Resolver: orderResolver,
 			Origins:  map[string]vendor.Origin{easyecom.PlatformName: easyecom.NewSource(easyecomClient, logger)},
 			Vendors:  vendors,
 			SKUs:     skumap.NewStore(pool),

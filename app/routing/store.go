@@ -22,6 +22,27 @@ func NewStore(pool *pgxpool.Pool) *Store {
 	return &Store{pool: pool}
 }
 
+// ResolveIntegration reads the authenticated pipeline without consulting
+// warehouse routes. Rechecking status at execution time also covers queued work.
+func (s *Store) ResolveIntegration(ctx context.Context, integrationID uuid.UUID) (*Resolution, error) {
+	var res Resolution
+	err := s.pool.QueryRow(ctx, `
+		SELECT i.id, i.name, src.name, dst.name
+		FROM integrations i
+		JOIN platforms src ON src.id = i.source_platform_id
+		JOIN platforms dst ON dst.id = i.destination_platform_id
+		WHERE i.id = $1 AND i.status = 'active'
+		  AND src.status = 'active' AND dst.status = 'active'`, integrationID,
+	).Scan(&res.IntegrationID, &res.IntegrationName, &res.SourcePlatform, &res.DestinationPlatform)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNoRoute
+	}
+	if err != nil {
+		return nil, fmt.Errorf("routing: resolve integration: %w", err)
+	}
+	return &res, nil
+}
+
 // Resolve implements Resolver. Disabled routes and disabled integrations
 // resolve to nothing, so an operator can pause a warehouse or a whole
 // pipeline without deleting configuration.

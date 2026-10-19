@@ -20,6 +20,7 @@ import (
 // configure any type their platform parser emits.
 const (
 	TypeWarehouse   = "warehouse_id"
+	TypeIntegration = "integration_id"
 	TypeMarketplace = "marketplace_id"
 	TypeChannel     = "channel"
 	TypeCompany     = "company"

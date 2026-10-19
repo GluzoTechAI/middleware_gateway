@@ -88,7 +88,8 @@ Example accepted response:
 
 The job payload is the platform-neutral `webhook.Event`: platform, event
 type, correlation ID, integration ID, external order ID, reference code,
-invoice number, routing key (`warehouse_id=12345`), idempotency key, receipt
+invoice number, routing key (`integration_id=<token integration>` by default,
+or `warehouse_id=12345` in warehouse mode), idempotency key, receipt
 time, and the original order object exactly as EasyEcom sent it. The worker
 decodes that object with the EasyEcom DTOs, so nothing is lost between the
 HTTP layer and the workflow.

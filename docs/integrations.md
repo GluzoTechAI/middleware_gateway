@@ -66,6 +66,13 @@ object, and all three decode into the same `OrdersData`.
 
 ### Webhooks
 
+The server defaults to `ORDER_ROUTING_MODE=integration`: the authenticated
+integration selects the pipeline, and `VINCULUM_LOCATION` selects its order
+destination. Warehouse fields are optional for intake in this mode. Set
+`ORDER_ROUTING_MODE=warehouse` to require and match the warehouse field.
+See [Routing](routing.md) for mode scope and [the revert guide](routing-revert.md)
+for the cutover steps.
+
 Observed compatibility: V1 location-assignment callbacks can use `warehouseId`
 instead of `warehouse_id`. The shared order DTO accepts either spelling and
 normalizes it for webhook routing and order mapping. If both are populated

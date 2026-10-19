@@ -16,9 +16,11 @@ import (
 
 // Supported values for APP_ENV.
 const (
-	EnvDevelopment = "development"
-	EnvStaging     = "staging"
-	EnvProduction  = "production"
+	EnvDevelopment          = "development"
+	EnvStaging              = "staging"
+	EnvProduction           = "production"
+	OrderRoutingIntegration = "integration"
+	OrderRoutingWarehouse   = "warehouse"
 )
 
 // ServiceName identifies the gateway in logs and health responses.
@@ -26,17 +28,19 @@ const ServiceName = "gluzo-integration-gateway"
 
 // Config is the fully resolved configuration for one process.
 type Config struct {
-	App       App
-	HTTP      HTTP
-	Database  Database
-	Redis     Redis
-	Storage   Storage
-	Queue     Queue
-	Worker    Worker
-	Admin     Admin
-	EasyEcom  EasyEcom
-	Vinculum  Vinculum
-	Scheduler Scheduler
+	// OrderRoutingMode selects token integration routing or explicit warehouse routes.
+	OrderRoutingMode string
+	App              App
+	HTTP             HTTP
+	Database         Database
+	Redis            Redis
+	Storage          Storage
+	Queue            Queue
+	Worker           Worker
+	Admin            Admin
+	EasyEcom         EasyEcom
+	Vinculum         Vinculum
+	Scheduler        Scheduler
 }
 
 // Scheduler tunes the periodic job publisher. Enabled=false leaves periodic
@@ -227,6 +231,7 @@ func LoadFrom(lookup Lookup) (*Config, error) {
 	r := reader{lookup: lookup}
 
 	cfg := &Config{
+		OrderRoutingMode: r.str("ORDER_ROUTING_MODE", OrderRoutingIntegration),
 		App: App{
 			Env:             r.str("APP_ENV", EnvDevelopment),
 			Port:            r.int("APP_PORT", 8080),
@@ -329,6 +334,9 @@ func LoadFrom(lookup Lookup) (*Config, error) {
 // Validate checks invariants that parsing alone cannot express.
 func (c *Config) Validate() error {
 	var errs []error
+	if c.OrderRoutingMode != OrderRoutingIntegration && c.OrderRoutingMode != OrderRoutingWarehouse {
+		errs = append(errs, errors.New("ORDER_ROUTING_MODE must be integration or warehouse"))
+	}
 
 	switch c.App.Env {
 	case EnvDevelopment, EnvStaging, EnvProduction:

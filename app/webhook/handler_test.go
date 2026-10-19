@@ -23,6 +23,7 @@ import (
 	"github.com/gluzo/integration-gateway/app/integrations/easyecom"
 	"github.com/gluzo/integration-gateway/app/intlog"
 	"github.com/gluzo/integration-gateway/app/queue"
+	"github.com/gluzo/integration-gateway/app/routing"
 	"github.com/gluzo/integration-gateway/app/webhook"
 )
 
@@ -48,13 +49,14 @@ func (f failingStore) Claim(context.Context, idempotency.Record) (idempotency.Cl
 }
 
 type env struct {
-	router   *gin.Engine
-	logs     *bytes.Buffer
-	recorder *intlog.Memory
-	queue    *queue.Memory
-	store    *idempotency.MemoryStore
-	integ    auth.Integration
-	platform auth.Platform
+	integrationRouting bool
+	router             *gin.Engine
+	logs               *bytes.Buffer
+	recorder           *intlog.Memory
+	queue              *queue.Memory
+	store              *idempotency.MemoryStore
+	integ              auth.Integration
+	platform           auth.Platform
 }
 
 type envOption func(*env) (idempotency.Store, queue.Publisher)
@@ -88,7 +90,8 @@ func newEnv(t *testing.T, opts ...envOption) *env {
 	for _, opt := range opts {
 		store, publisher = opt(e)
 	}
-	handler := webhook.NewHandler(easyecom.WebhookParser{}, store, publisher, logger, webhook.WithRecorder(e.recorder))
+	handler := webhook.NewHandler(easyecom.WebhookParser{IntegrationRouting: e.integrationRouting}, store, publisher, logger,
+		webhook.WithRecorder(e.recorder), webhook.WithIntegrationRouting(e.integrationRouting))
 
 	r := gin.New()
 	r.Use(middleware.Correlation(), middleware.BodyLimit(1024))
@@ -177,6 +180,45 @@ func TestWebhookAcceptedAndQueued(t *testing.T) {
 	}
 	if strings.Contains(e.logs.String(), platformKey) || strings.Contains(e.logs.String(), accessToken) {
 		t.Fatal("credentials leaked into logs")
+	}
+}
+
+func TestWebhookIntegrationRoutingUsesTokenIdentity(t *testing.T) {
+	for _, payload := range []string{
+		`{"order_id":1}`,
+		`{"order_id":1,"warehouseId":304788,"import_warehouse_id":304643}`,
+		`{"order_id":1,"integration_id":"forged-integration","warehouse_id":999}`,
+	} {
+		t.Run(payload, func(t *testing.T) {
+			e := newEnv(t, func(e *env) (idempotency.Store, queue.Publisher) {
+				e.integrationRouting = true
+				return e.store, e.queue
+			})
+			w := e.post("/webhooks/easyecom", payload, authHeaders())
+			if w.Code != http.StatusAccepted {
+				t.Fatalf("status %d: %s", w.Code, w.Body.String())
+			}
+			job := e.nextJob(t)
+			var ev event.Event
+			if err := json.Unmarshal(job.Payload, &ev); err != nil {
+				t.Fatal(err)
+			}
+			if ev.IntegrationID != e.integ.ID.String() || ev.RoutingKey.Type != routing.TypeIntegration || ev.RoutingKey.Value != ev.IntegrationID {
+				t.Fatalf("queued event did not use token identity: %+v", ev)
+			}
+			if string(ev.Payload) != payload {
+				t.Fatalf("payload was modified: %s", ev.Payload)
+			}
+			if err := event.Validate(ev); err != nil {
+				t.Fatal(err)
+			}
+			if duplicate := e.post("/webhooks/easyecom", payload, authHeaders()); duplicate.Code != http.StatusOK {
+				t.Fatalf("duplicate status %d", duplicate.Code)
+			}
+			if unauthenticated := e.post("/webhooks/easyecom", payload, nil); unauthenticated.Code != http.StatusUnauthorized {
+				t.Fatalf("unauthenticated status %d", unauthenticated.Code)
+			}
+		})
 	}
 }
 

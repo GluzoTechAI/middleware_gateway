@@ -42,6 +42,9 @@ func TestLoadFrom(t *testing.T) {
 			name: "defaults apply when only required values are set",
 			env:  base,
 			check: func(t *testing.T, cfg *config.Config) {
+				if cfg.OrderRoutingMode != config.OrderRoutingIntegration {
+					t.Errorf("order routing mode = %q, want integration", cfg.OrderRoutingMode)
+				}
 				if cfg.App.Env != config.EnvDevelopment {
 					t.Errorf("env = %q, want development", cfg.App.Env)
 				}
@@ -129,6 +132,20 @@ func TestLoadFrom(t *testing.T) {
 			name:    "worker enabled must be boolean",
 			env:     merge(base, map[string]string{"WORKER_ENABLED": "maybe"}),
 			wantErr: "WORKER_ENABLED: expected true or false",
+		},
+		{
+			name: "warehouse order routing can be restored",
+			env:  merge(base, map[string]string{"ORDER_ROUTING_MODE": "warehouse"}),
+			check: func(t *testing.T, cfg *config.Config) {
+				if cfg.OrderRoutingMode != config.OrderRoutingWarehouse {
+					t.Fatal(cfg.OrderRoutingMode)
+				}
+			},
+		},
+		{
+			name:    "unknown order routing mode fails startup",
+			env:     merge(base, map[string]string{"ORDER_ROUTING_MODE": "fallback"}),
+			wantErr: "ORDER_ROUTING_MODE must be integration or warehouse",
 		},
 		{
 			name:    "worker concurrency must be positive",
