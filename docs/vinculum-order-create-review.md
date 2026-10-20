@@ -1,4 +1,235 @@
-# The rejected create-order request differed from Vinculum's v4 contract
+# EasyEcom to BCPL staging works with the accepted minimal request
+
+This is the operational runbook and debugging record for the first successful
+staging `ORDER_SYNC`. The field audit below preserves why the request changed.
+For every operator command, see the [gatewayctl reference](<../gatewayctl commands.md>).
+
+## The first complete staging run succeeded in one attempt
+
+The user supplied a successful gateway timeline on 20 October 2026. It shows:
+
+| Stage | Result | Attempts | Duration |
+| --- | --- | --- | --- |
+| `RESOLVE_INTEGRATION` | SUCCESS | 1 | 5 ms |
+| `FETCH_ORDER` | SUCCESS | 1 | 587 ms |
+| `MAP_ORDER` | SUCCESS | 1 | 5 ms |
+| `SUBMIT_VENDOR_ORDER` | SUCCESS | 1 | 693 ms |
+
+`WEBHOOK_RECEIVED` at `05:16:53.548 UTC` and `WORKFLOW_COMPLETED` at
+`05:16:54.865 UTC` bracket approximately 1.3 seconds. Both outbound operations,
+EasyEcom `GetOrderDetails` and Vinculum `CreateOrder`, were successful. This is
+user-supplied staging evidence, distinct from our local tests against stubs.
+
+This establishes the order-creation flow. The screenshot does not show recipient
+read-back inside Vinculum, duplicate behaviour, stock synchronization, tracking
+updates, cash-on-delivery orders, cancellation or production readiness. Those
+remain separate acceptance checks; one green order does not close all blockers.
+
+## Each failure belonged to a different boundary
+
+| Symptom | Finding | Correction and lesson |
+| --- | --- | --- |
+| Only summary rows were visible | Webhook/API bodies and headers were not captured in the original timeline | Added opt-in detailed logging with copy controls, bounded bodies and sanitized headers/contact data. Enable it before reproducing an issue. |
+| `MAP_ORDER`: no active mapping for source SKU `142296` | Fetch success does not establish a source-to-vendor SKU mapping | Add or activate an integration-scoped mapping after verifying the destination product. Never guess a vendor SKU or silently pass an unmapped SKU through. |
+| `MAP_ORDER`: missing recipient name, address line 1 and phone | The supplied EasyEcom detail response had null contacts while the matching webhook had them | Fill only missing contact/address fields from a webhook whose identity matches the event and fetched order. Preserve current API business data and populated contacts. |
+| `Unrecognized field orderNo` | Header fields were at the JSON root and the line array was incorrectly stored in `orderAmount` | Use `{"order":{...}}`, `order.items` for lines and a quoted scalar header total. Compare exact JSON paths, not only field names. |
+| Shipping/billing and tenant constants differed from the accepted request | Guessed tags and `SALE` / `PREPAID` / `NEW` did not establish the tenant's contract | Use the v4 field names, distinct billing data, explicit tenant settings and the working Postman request as evidence. Keep actual source values dynamic. |
+| Optional `mode` / `taxInclusive` mapping errors | Both fields accept true blanks; reported runtime settings included lowercase `yes`, which the original wire validator did not accept | Normalize these non-secret enums at config loading, retain blank omission and reject unknown settings by variable name before processing orders. Do not turn optional fields into required fields. |
+| HTTP 200 with `Generic Error` | The body carried `responseCode=9` and nested `SKU [BPIN00043237] Primary vendor is not MarketPlace type` | `mode=dropship` selected a different processing path. Restore the accepted omission of mode. Surface nested `requestStatus.errorDesc` instead of hiding it behind the outer message. |
+| Editing `.env` did not necessarily change a running container | Existing process variables override file values; Compose containers retain their environment across a plain restart | Recreate the gateway after changing its deployed environment and verify the new outgoing request. A local file or Git revision does not prove what a running container uses. |
+
+The earlier mapping-error report did not prove that a truly empty value itself
+was invalid. In particular, the exact non-empty mode value at that failure was
+not captured. Six later regressions exercise unset, empty, whitespace,
+comment-only, plain blank-file and originally commented blank-file values through
+configuration, mapping and actual HTTP serialization. All pass and omit both
+optional JSON fields. Inline-comment handling by external loaders is covered as
+a regression risk, not claimed as the confirmed cause of the Compose incident.
+
+## Keep the same request shape and change only each order's real data
+
+Use the tenant host and the accepted staging settings:
+
+```dotenv
+VINCULUM_BASE_URL=https://beautyimpex.vineretail.com
+ORDER_ROUTING_MODE=integration
+VINCULUM_LOCATION=PBW
+VINCULUM_ORDER_TYPE_PREPAID=Prepaid
+VINCULUM_PAYMENT_TYPE_PREPAID=COD
+VINCULUM_ORDER_STATUS=Confirmed
+VINCULUM_ORDER_TIMEZONE=Asia/Kolkata
+VINCULUM_ORDER_MODE=
+VINCULUM_ORDER_TAX_INCLUSIVE=
+```
+
+`paymentType=COD` is the literal accepted for this tenant's prepaid request;
+it does not change the source order's payment mode. Cash-on-delivery source
+orders need their own confirmed settings. Authentication credentials and the
+sellable stock bucket remain independently configured; the block above is not
+a complete `.env` and contains no secrets.
+
+The request retains the accepted `order` envelope, `items`, explicit shipping and
+billing fields, stable `orderNo` / `uniqueKey`, and `reqType=create`. Dates use
+`DD/MM/YYYY HH:mm:ss` in the configured staging timezone. Use actual source totals,
+prices, currency, quantities, line identifiers and customer details. Do not copy
+the Postman example's fixed amount, date, order ID or personal details into code.
+Masked contacts copied from a log are not usable recipient data.
+
+The accepted request omitted `mode` and `taxInclusive`. Omitted mode follows the
+documented WMS path; the commercial fact that BCPL fulfils an order does not by
+itself justify API `mode=dropship`. Keep the optional fields absent until a
+specific tenant requirement is confirmed with a successful request.
+
+## Inspect first, then change only the failing boundary
+
+The commands below are a reference for the operator. They were not executed
+against staging while preparing this summary. Run Compose commands on the
+deployment host from the directory containing its Compose configuration.
+
+### Inspect the deployment and existing integration
+
+```sh
+docker compose ps
+docker compose logs --tail=100 gateway
+docker compose exec gateway /app/gatewayctl integration list
+docker compose exec gateway /app/gatewayctl token list --integration easyecom-vinculum
+docker compose exec gateway /app/gatewayctl skumap list --integration easyecom-vinculum
+docker compose exec gateway /app/gatewayctl route list --integration easyecom-vinculum
+```
+
+The runtime is distroless: invoke `/app/gatewayctl` directly rather than opening
+an in-container shell. List existing rows before running creation commands.
+Gateway inbound platform keys/tokens, outbound EasyEcom credentials and outbound
+Vinculum `ApiOwner`/`ApiKey` credentials serve different purposes.
+
+Orders in integration-routing mode use the authenticated integration and
+`VINCULUM_LOCATION`; a warehouse route row is not required for that order path.
+Stock/shipment schedules still use configured route locations. If deliberately
+using warehouse mode, verify both the warehouse ID and the integration owning
+the route. Do not interchange warehouse IDs, EasyEcom location keys and PBW.
+
+For a genuinely missing mapping, replace both placeholders with verified codes
+and run only after checking that the row does not already exist:
+
+```sh
+docker compose exec gateway /app/gatewayctl skumap add --integration easyecom-vinculum --gluzo-sku SOURCE_SKU --vendor-sku VERIFIED_VENDOR_SKU
+```
+
+This writes configuration to the connected database. It does not verify that
+the product exists in Vinculum. A disabled existing row is handled with the
+documented `skumap set-status` command rather than a duplicate `add`.
+
+### Apply environment changes and inspect a fresh staging order
+
+For request/response capture, set these before creating the diagnostic order:
+
+```dotenv
+DETAILED_LOG_ENABLED=true
+DETAILED_LOG_MAX_BODY_BYTES=262144
+```
+
+Apply changed deployed environment values by recreating the gateway:
+
+```sh
+docker compose up -d --no-deps --force-recreate gateway
+```
+
+Deploy code through the normal build process first. When building directly from
+this checkout, the corresponding command is:
+
+```sh
+docker compose up -d --no-deps --build --force-recreate gateway
+```
+
+Create a **new staging order**. This debugging session does not migrate old
+prepared requests or require resuming old workflows. In the timeline, inspect
+the first failed action, expand its request/response data, and check the full
+response body even when HTTP is 200. Success requires all four actions and
+`WORKFLOW_COMPLETED`, not just `WEBHOOK_RECEIVED` or an HTTP success row.
+
+For an existing correlation ID, this PowerShell example downloads the protected
+timeline using an admin token already present in the process environment:
+
+```powershell
+curl.exe --fail-with-body -H "Authorization: Bearer $env:ADMIN_LOG_VIEWER_TOKEN" "https://gateway.gluzone.dev/admin/logs/CORRELATION_ID?format=json"
+```
+
+Replace `CORRELATION_ID`; do not put credential values in a shared prompt or
+committed command. A browser session can use the existing `/admin/login` flow.
+
+### Verify local changes before deployment
+
+Run from the repository root on the development machine:
+
+```powershell
+gofmt -l .
+go vet ./...
+go test ./...
+```
+
+The full suite includes embedded-PostgreSQL tests. Do not substitute `-short`.
+The repository requires an environment that can start the embedded database.
+Race tests are unavailable on this Windows machine because cgo is unavailable.
+
+Focused regression checks and an isolated local smoke test are:
+
+```powershell
+go test ./app/integrations/vinculum -run 'TestBlankOptionalSettingsReachVendorWithoutMappingErrors|TestGenericCreateErrorIncludesNestedVendorRejection' -count=1 -v
+go test ./app/integrations/easyecom ./app/workflow/ordersync ./app/config
+go run ./cmd/devstack -once
+```
+
+The devstack uses local stub vendors and bypasses the real `.env`; it is not a
+tenant acceptance test. Passing local tests and successful staging evidence
+should always be reported separately.
+
+## Reusable prompts keep future investigations evidence-based
+
+**Diagnose a failed order:**
+
+> Inspect ORDER_SYNC for source order ORDER_ID and correlation ID CORRELATION_ID.
+> Start at the first failed action. Compare the webhook, fetched domain fields,
+> active integration SKU mapping, outgoing request and full response, including
+> nested requestStatus.errorDesc. Separate transport success from business
+> acceptance. Use only sanitized evidence; propose the smallest correction.
+> Prepare staging commands for me to run. Do not deploy or submit an order.
+
+**Compare a working Postman request with the gateway:**
+
+> Treat the supplied successful Postman request as the tenant baseline. Compare
+> JSON paths, nesting, types and explicit settings with the failed request.
+> Separate expected order/customer value differences from contract differences.
+> Keep optional fields absent unless evidence requires them. Do not hardcode the
+> sample's IDs, contacts, amounts or dates. Explain confirmed causes separately
+> from hypotheses and provide a bounded regression check.
+
+**Plan a cleanup without losing coverage:**
+
+> Inventory tests, fixtures and docs before deleting anything. Map each test to
+> the behaviour it protects and search references to each proposed removal.
+> Identify exact duplication and stale wording. Preserve regressions for blank
+> config, SKU mapping, same-order contact fallback, v4 request shape, nested errors,
+> idempotency and supported recovery. Propose consolidation and link updates;
+> do not delete files or runtime data until I approve the named list.
+
+**Discuss a future integration before setup:**
+
+> Help me set up SOURCE to DESTINATION in staging. First determine whether this
+> is another account on supported adapters or a new platform requiring code.
+> Inspect account credential scoping, worker/queue isolation, event support,
+> minimal successful API examples, routing and mappings. Ask only for missing
+> decisions. Prepare a setup plan and commands for me to execute. Do not create
+> credentials, edit runtime settings, implement adapters, deploy or submit orders.
+
+Current `buildWorker` creates one environment-configured EasyEcom client and one
+Vinculum client per process. An additional integration database row does not
+automatically provide a separate outbound credential set. Review account scoping
+and worker/queue isolation before planning an additional account. A new platform
+also needs supported adapters and registration; CLI row creation alone cannot
+implement it. The future helper remains a discussion proposal, not an installed
+agent or a new pipeline.
+
+## The historical field audit explains the corrections
 
 Reviewed on 19 October 2026 against the rendered official
 [v4 create-order documentation](https://erp.vineretail.com/swagger/#/Orders/post_RestWS_api_eretail_v4_order_create),

@@ -29,10 +29,9 @@ soon as the order lands, which is what a smoke test wants.
 
 The stub vendors are deliberate: every outbound base URL points at a server
 the tool owns, and the generated environment is passed through `ENV_FILE` so
-a `.env` holding real credentials is not read. Several Vinculum request field
-names are still unverified (see [docs/blockers.md](docs/blockers.md)), so a
-dev stack that could reach a real warehouse would be a way to ship a parcel
-by accident.
+a `.env` holding real credentials is not read. This smoke test creates orders
+only at the local stubs. Tenant acceptance is tracked separately in the
+[staging runbook and debugging record](docs/vinculum-order-create-review.md).
 
 With Docker:
 
@@ -81,15 +80,17 @@ Each secret is printed once. See [docs/authentication.md](docs/authentication.md
 gofmt -l .
 go vet ./...
 go test ./...          # includes integration and end-to-end tests on an embedded PostgreSQL
-go test -short ./...   # unit tests only
 ```
 
 The end-to-end test in `tests/` runs the full production scenario: a
 duplicated EasyEcom webhook is accepted once, the worker routes, fetches,
-maps and pushes the order to a fake Uniware, the destination outage exhausts
+maps and pushes the order to a stub Vinculum server, the destination outage exhausts
 the action's retries, a simulated restart resumes the run from the failed
 action to completion, the trace is served by the admin viewer, and retention
 prunes old logs.
+
+Use the full suite as the verification gate; `-short` skips the database-backed
+integration tests. Race tests are unavailable on this Windows machine without cgo.
 
 ## Operate
 
@@ -151,3 +152,5 @@ storage/          runtime logs and workflow state (not committed)
 - [Logging and the admin viewer](docs/logging.md)
 - [Integrations](docs/integrations.md)
 - [Deployment](docs/deployment.md)
+- [Working BCPL staging flow, debugging commands and reusable prompts](docs/vinculum-order-create-review.md)
+- [Complete gatewayctl command reference](<gatewayctl commands.md>)
