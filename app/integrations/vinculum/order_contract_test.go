@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -120,7 +121,7 @@ func TestBCPLPrepaidUsesAcceptedSettingsAndStableUniqueKey(t *testing.T) {
 	f := newFakeVinculum(t)
 	client, err := vinculum.NewClient(vinculum.Config{
 		BaseURL: f.srv.URL, APIOwner: testOwner, APIKey: testKey, SellableBucket: "Good",
-		OrderOptions: vinculum.OrderOptions{PrepaidOrderType: c.PrepaidOrderType, PrepaidPaymentType: c.PrepaidPaymentType, InitialStatus: c.OrderStatus, Timezone: c.OrderTimezone},
+		OrderOptions: vinculum.OrderOptions{PrepaidOrderType: c.PrepaidOrderType, PrepaidPaymentType: c.PrepaidPaymentType, InitialStatus: c.OrderStatus, Timezone: c.OrderTimezone, Mode: c.OrderMode, TaxInclusive: c.OrderTaxInclusive},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -177,6 +178,86 @@ func TestBCPLPrepaidUsesAcceptedSettingsAndStableUniqueKey(t *testing.T) {
 	o.PaymentMode = order.PaymentCashOnDelivery
 	if _, err = v.PrepareOrder(ctx, o, route); err == nil {
 		t.Fatal("unverified cash-on-delivery settings were inferred")
+	}
+}
+
+func TestBlankOptionalSettingsReachVendorWithoutMappingErrors(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		injected map[string]string
+		envFile  string
+	}{
+		{name: "unset variables"},
+		{name: "empty injected values", injected: map[string]string{"VINCULUM_ORDER_MODE": "", "VINCULUM_ORDER_TAX_INCLUSIVE": ""}},
+		{name: "whitespace injected values", injected: map[string]string{"VINCULUM_ORDER_MODE": " \t ", "VINCULUM_ORDER_TAX_INCLUSIVE": " \t "}},
+		{name: "comment text retained by an external loader", injected: map[string]string{"VINCULUM_ORDER_MODE": " # optional: wms or dropship; blank uses API default", "VINCULUM_ORDER_TAX_INCLUSIVE": " # optional: Yes or No; confirm the source price basis"}},
+		{name: "blank env file", envFile: "VINCULUM_ORDER_MODE=\nVINCULUM_ORDER_TAX_INCLUSIVE=\n"},
+		{name: "original commented env file", envFile: "VINCULUM_ORDER_MODE=             # optional: wms or dropship; blank uses API default\nVINCULUM_ORDER_TAX_INCLUSIVE=    # optional: Yes or No; confirm the source price basis\n"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			env := map[string]string{
+				"DATABASE_URL": "postgres://test:test@localhost/test", "REDIS_URL": "redis://localhost:6379/0",
+				"VINCULUM_ORDER_TYPE_PREPAID": "Prepaid", "VINCULUM_PAYMENT_TYPE_PREPAID": "COD", "VINCULUM_ORDER_STATUS": "Confirmed", "VINCULUM_ORDER_TIMEZONE": "Asia/Kolkata",
+			}
+			for key, value := range tt.injected {
+				env[key] = value
+			}
+			variables, err := dotenv.Parse(strings.NewReader(tt.envFile))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, variable := range variables {
+				env[variable.Key] = variable.Value
+			}
+			cfg, err := config.LoadFrom(func(key string) (string, bool) { value, ok := env[key]; return value, ok })
+			if err != nil {
+				t.Fatalf("empty optional settings rejected by configuration: %v", err)
+			}
+			var calls atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				var root map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&root); err != nil {
+					t.Error(err)
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				head := requireOrderEnvelope(t, root)
+				for _, raw := range head["items"].([]any) {
+					line := raw.(map[string]any)
+					for _, key := range []string{"mode", "taxInclusive"} {
+						if value, present := line[key]; present {
+							t.Errorf("outgoing JSON contains optional %s=%v", key, value)
+						}
+					}
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"responseCode":0,"requestStatus":{"status":"Success","outputKey":"VIN-EMPTY-OPTIONS"}}`))
+			}))
+			defer srv.Close()
+			c := cfg.Vinculum
+			client, err := vinculum.NewClient(vinculum.Config{
+				BaseURL: srv.URL, APIOwner: testOwner, APIKey: testKey, SellableBucket: "Good",
+				OrderOptions: vinculum.OrderOptions{PrepaidOrderType: c.PrepaidOrderType, PrepaidPaymentType: c.PrepaidPaymentType, InitialStatus: c.OrderStatus, Timezone: c.OrderTimezone, Mode: c.OrderMode, TaxInclusive: c.OrderTaxInclusive},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			v, err := vinculum.NewVendor(client, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			o := sampleOrder()
+			o.PaymentMode = order.PaymentPrepaid
+			doc, err := v.PrepareOrder(context.Background(), o, vendorRoute())
+			if err != nil {
+				t.Fatalf("blank optional settings caused a mapping error: %v", err)
+			}
+			ack, err := v.SubmitOrder(context.Background(), doc, o, vendorRoute())
+			if err != nil || !ack.Created || ack.VendorOrderID != "VIN-EMPTY-OPTIONS" || calls.Load() != 1 {
+				t.Fatalf("blank settings prevented submission: %+v, calls=%d, err=%v", ack, calls.Load(), err)
+			}
+		})
 	}
 }
 
