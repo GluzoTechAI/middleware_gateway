@@ -10,6 +10,13 @@ Tenant masters/timezone are configuration, acknowledgements require
 B17 and B18 remain open pending recorded tenant tests. The narrative below
 records the original phase implementation.
 
+**20 October 2026 staging evidence:** the user reported that the supplied v4
+request created an order at BCPL location `PBW`. Prepaid source orders now use
+configured `Prepaid` / `COD` / `Confirmed`; the user chose `Asia/Kolkata` for
+staging. `uniqueKey` equals the source order ID. The sample's amount, date and
+contacts are not hardcoded. Cash-on-delivery source settings, actual success
+response and recipient read-back remain unverified.
+
 **Goal:** a BCPL order placed on the storefront reaches BCPL's warehouse.
 
 > **Do not run this phase against BCPL production.** It is the first phase
@@ -139,10 +146,10 @@ its own tests.
 
 | Item | If wrong |
 |---|---|
-| **The `ship*` address field names** | **Fails quietly.** Fields now match the official v4 table/example, but actual tenant shipping/billing persistence still requires a recorded order. |
+| **The `ship*` address field names** | **Fails quietly.** Fields now match the official v4 table/example, but user reports creation with these fields, but their persisted values still need read-back. |
 | The duplicate rejection's code and wording | Fails loudly; the order is stuck and visible, never duplicated |
-| Order types, payment methods and initial status | Explicit settings without defaults; missing values fail locally before submission |
-| `orderDate` and timezone | Create uses the v4 example layout with configured timezone; tenant acceptance pending. Read dates retain B11. |
+| Order types, payment methods and initial status | User-confirmed prepaid `Prepaid` / `COD` / `Confirmed`; cash-on-delivery settings remain blank and fail locally if used |
+| `orderDate` and timezone | Create layout accepted in user-reported test; user chose Asia/Kolkata for staging. Read dates retain B11. |
 
 The first is the only thing in this phase that can go wrong without anyone
 noticing, and it is **the reason not to run Phase 5 against production before

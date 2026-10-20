@@ -92,7 +92,7 @@ a day's work, and a permanently weaker guarantee.
 
 | # | Question | Who answers | Assumed | Blocks | If wrong | Blast radius |
 |---|---|---|---|---|---|---|
-| B4 | `orderLocation` code for BCPL's warehouse | BCPL | — | Phase 5 live | Orders go nowhere, loudly | One route row |
+| B4 | `orderLocation` code for BCPL's warehouse | User-confirmed BCPL staging creation, 20 October 2026 | `PBW` accepted for staging | Resolved for this staging tenant | Reconfirm for another deployment | One route row |
 | B5 | Test `ApiOwner` / `ApiKey`, seeded SKUs | BCPL | — | Live test of Phases 1, 5 | Cannot verify anything against the real API | None; unblocks B1 |
 | B6 | Can Vinculum call a URL we host? (A2) | BCPL | No | Nothing | We poll when we could push | Additive: a new endpoint, sweep stays as backstop |
 | B7 | `current_shipment_status_id` enum | EasyEcom | — | Phase 6 live | Tracking status wrong or rejected | One mapping table |
@@ -105,7 +105,7 @@ a day's work, and a permanently weaker guarantee.
 | B14 | EasyEcom `getInventoryDetailsV2`, `Carriers/getTrackingDetails` | EasyEcom | Unverified | Nothing | Nothing — **unused under dropship** | Delete or rework in Phases 3, 6 |
 | B15 | Bulk Inventory Update's **path** | EasyEcom | `/bulkInventoryUpdate` | Phase 4 live | **Fails loud:** every push errors on the first call | One constant |
 | B16 | Bulk Inventory Update's per-SKU result shape | EasyEcom | Absent list = all accepted | Nothing | Partial failures reported as successes | One function |
-| B17 | Vinculum shipping/billing persistence | BCPL | v4 fields aligned to official documentation on 19 October 2026; tenant persistence unverified | **Phase 5 live** | **Fails quietly:** accepted order could omit recipient data | Request/response/config correction for new orders implemented; recorded tenant test still required |
+| B17 | Vinculum shipping/billing persistence | BCPL | User reports successful creation with the v4 fields on 20 October 2026; recipient read-back still unverified | **Phase 5 live** | **Fails quietly:** accepted order could omit recipient data | Request/response/config correction for new orders implemented; recorded tenant test still required |
 | B18 | The duplicate-order rejection's code and wording | BCPL | Keyword match, overridable by config | Nothing | Fails loudly; order stuck and visible, never duplicated | Configuration |
 | B19 | `AssignShipmentDetails` and `updateTrackingStatus` **paths** | EasyEcom | Conventional names | Phase 6 live | **Fails loud:** every dispatch push errors on the first call | Two constants |
 
@@ -113,7 +113,11 @@ The approved 19 October 2026 correction exceeds the original nine-tag estimate:
 it fixes envelope, lines/total, contacts, configured master values/date handling,
 and acknowledgements for new orders. See the
 [contract review and acceptance checklist](vinculum-order-create-review.md).
-Documentation alignment and local regression tests leave B17 **open**.
+The user reported successful BCPL staging creation on 20 October 2026 using PBW,
+`Prepaid` / `COD` / `Confirmed`, a quoted header total and a stable `uniqueKey`.
+The user also confirmed `Asia/Kolkata` for staging. B4 is resolved for staging;
+B17 remains **open for address read-back**, and B10/B18 await actual response
+and duplicate evidence. Cash-on-delivery source-order settings remain unverified.
 
 **On B17 — read this one.** It is the only unverified item in the project
 that can be wrong **without anyone noticing**. Every other guess fails loudly:
@@ -240,14 +244,15 @@ reach BCPL production is a way to ship a parcel by accident.
 1. Does `committedQty` rise or fall when an order is placed? *(B1 — we can
    test this ourselves given item 4)*
 2. Which `bucket` value represents good, sellable stock? *(B2)*
-3. The three-character `orderLocation` code for your warehouse. *(B4)*
+3. `orderLocation=PBW` is confirmed for this staging tenant (user, 20 October
+   2026). Reconfirm only when configuring another deployment. *(B4)*
 4. Test-environment `ApiOwner` / `ApiKey` and a few seeded SKUs. *(B5)*
 5. What `responseCode` does a successful call return, and what date format do
    `fromDate` / `toDate` expect? *(B10, B11)*
 6. Can Vinculum call a URL we host? *(B6 — a "no" costs us nothing)*
-7. **The exact field names of the `ship*` address block** on order create, and
-   the `responseCode` returned for a duplicate order number. *(B17, B18 — B17
-   is the one that fails silently)*
+7. Verify shipping/billing read-back on the accepted staging order and capture
+   the `responseCode` returned for a duplicate order number. Field names were
+   supplied in the user's successful request on 20 October 2026. *(B17, B18)*
 
 **To EasyEcom** — answers unblock Phases 3 and 6:
 
@@ -275,7 +280,7 @@ No phase is waiting on any answer above to be **written**.
 |---|---|---|
 | 3 — SKU map, EasyEcom stock sink | **Done** | No (B3) |
 | 4 — `STOCK_SYNC` | **Done** | No (B1, B2, B15) |
-| 5 — Orders to Vinculum | **Done** | No (B4, B5, B17) — **and must not run against BCPL production** |
+| 5 — Orders to Vinculum | **Done** | Staging create reported successful by user, 20 October 2026; response/address read-back and production readiness remain separate checks |
 | 6 — `SHIPMENT_SYNC` | **Done** | No (B7, B8, B19) |
 | 7 — Reconciliation | **Done** | Yes |
 
@@ -297,7 +302,8 @@ the plan is waiting on code.
 
 What is waiting is the answers above. Ranked by what they cost to get wrong:
 
-1. **B17** — the `ship*` field names. The only guess that fails silently.
+1. **B17** — shipping/billing read-back. Creation was accepted in the user-reported
+   staging test, but persistence of every recipient attribute remains to be checked.
 2. **B1, B2** — the quantity rule and the sellable bucket, before any stock is
    published. Both silent if wrong; both one line.
 3. **B15, B19** — three endpoint paths. Loud, and they stop a feature dead.

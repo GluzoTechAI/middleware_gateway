@@ -9,8 +9,48 @@ links to the same Swagger documentation for order creation.
 The supplied live response for order `652487720` is HTTP 200 with
 `responseCode=1009` and `Unrecognized field orderNo`. That is an application
 rejection. This work makes no authenticated API calls and does not submit an
-order. Tables below describe the rejected pre-fix request. Documentation checks do not establish that the Beauty Impex tenant has
-accepted a corrected request.
+order. The initial documentation review did not establish tenant acceptance;
+the user's later successful staging test is recorded below. The review tables
+describe the rejected pre-fix request.
+
+## The user reported successful BCPL creation on 20 October 2026
+
+The user supplied the accepted **request** for source order `652487720` and stated
+that it created an order at the BCPL location. The request has an outer `order`,
+`items`, quoted numeric values, and these confirmed staging settings:
+
+| Attribute | Accepted value / decision |
+| --- | --- |
+| `orderLocation` | `PBW` |
+| `orderType` for prepaid source orders | `Prepaid` |
+| `paymentType` for prepaid source orders | `COD` (preserve the tenant's accepted literal) |
+| Initial `status` | `Confirmed` |
+| `uniqueKey` | The same source order identifier as `orderNo` |
+| Date representation | `DD/MM/YYYY HH:mm:ss` |
+| Staging timestamp timezone | `Asia/Kolkata`, explicitly confirmed by the user in a follow-up |
+| `orderAmount` representation | Quoted monetary total, accepted as `"100"` in this test |
+
+The local `.env` and checked-in `.env.example` now carry these staging settings.
+Configuration remains explicit: no global defaults for other deployments are
+inferred, and cash-on-delivery source-order settings remain blank until tested.
+The optional `uniqueKey` is now emitted by the mapper for each new order and stays
+stable across retries; no existing workflow is migrated.
+
+The supplied request uses a header total of `100` and an item price of `1049`.
+Acceptance establishes the request shape, not the commercial correctness of those
+test amounts. The gateway sends each new source order's actual total, line prices,
+items, contacts and date; it does not copy the sample's values or recalculate a
+header total from incomplete line data. Customer contact details are omitted
+from this evidence note and sanitized in regression tests.
+
+The actual success-response body was not supplied. Creation is user-confirmed;
+response-code conventions (B10), duplicate behaviour (B18) and address read-back
+(B17) remain separate verification items. A successful create does not itself
+prove that every shipping and billing attribute persisted.
+
+The following review tables describe the earlier rejected request and explain
+the implementation choices; the staging confirmation above supersedes their
+previously open prepaid-master and amount-representation questions.
 
 ## The missing outer order object explains the first field rejection
 
@@ -135,8 +175,8 @@ submitted line does not use that feature.
    not an explicit timezone policy for this endpoint.
 4. The `orderAmount` table labels it an array, but its description calls it a total
    and the JSON example sends a decimal string. The example separately provides
-   `items`. The draft follows that example; tenant acceptance of the exact amount
-   type still needs verification.
+   `items`. The implementation follows that example; the user-reported successful
+   BCPL request on 20 October 2026 confirms acceptance of a decimal string.
 5. Use the actual header total, unit price, tax basis, discounts and shipping
    charges. Do not derive the total by blindly summing this log's unit prices, or
    invent an MRP. Confirm tax-inclusive versus exclusive pricing before supplying
@@ -172,6 +212,8 @@ Implemented on 19 October 2026 after approval of the broader correction:
 
 - Serialize the outer `order` object, use scalar header total and `items` lines,
   use documented contact names, and validate required fields and documented widths.
+  Since 20 October, also emit the source order ID as `uniqueKey`, matching the
+  user-reported successful request.
 - Keep original source totals, prices, currency, line identifiers and distinct
   billing addresses; omit unprovided MRP. Matching-webhook fallback fills missing
   contact fields without replacing populated API data.
@@ -189,17 +231,16 @@ The public [Sales guide](https://docs.vineretail.com/eretail-sales-section/)
 states that order types are categories created in the customer's database, with
 examples including COD and Prepaid. Its Sales > Order Create/Edit page exposes
 Order Type and Payment Detail. These examples cannot confirm Beauty Impex's
-configured values. Public research did not establish its initial status,
-payment-method values or order timestamp timezone. Do not treat test-fixture
-values (`Credit Card`, `Cash`, `Confirmed`, `Asia/Kolkata`) as tenant settings.
+configured values. The user-reported BCPL test now establishes
+`Prepaid` / `COD` / `Confirmed` for prepaid source orders, and the user explicitly
+selected `Asia/Kolkata` for staging. Generic test-fixture values such as `Credit
+Card` and `Cash` do not establish tenant payment settings for other order types.
 
 Before staging verification:
 
-1. Read the tenant's Order Type options and payment methods from Sales > Order
-   Create/Edit, or obtain the exact API values from BCPL. Confirm `ODRTYPE`,
-   `ODRSTS`, accepted `orderLocation` and timestamp timezone with the tenant owner.
-   Inspect without saving an order. A known successful API request is stronger
-   evidence than a UI display label; labels can differ from API codes.
+1. Use the confirmed prepaid settings above for staging. Before testing a
+   cash-on-delivery source order, obtain and configure its own accepted order
+   type and payment value. Do not infer those values from this prepaid example.
 2. Populate the new variables listed in [.env.example](../.env.example) and
    [deployment guidance](deployment.md), then restart the worker after deployment.
 3. Create a new staging order to trigger a new webhook and workflow using the
@@ -208,9 +249,12 @@ Before staging verification:
    and acknowledgement. Verify order number, channel, all shipping/billing fields,
    totals, item quantities and generated WMS/dropship identifier in Vinculum.
 5. Capture evidence of repeat submission behaviour before closing B18, and verify
-   actual persisted addresses before closing B17. The orderAmount type conflict
-   and creation timezone still need recorded tenant acceptance.
+   actual persisted addresses before closing B17. Capture the success response
+   to verify B10 independently. Other deployments must select their own timezone.
 
 Local regression coverage exercises exact HTTP shape, field/date validation,
-acknowledgement failures and distinct billing for new orders. These local tests
-do not prove tenant acceptance. No blocker or TODO marker is closed by this change.
+acknowledgement failures and distinct billing for new orders. A separate regression
+loads `.env.example` through the real configuration parser, prepares a prepaid
+order and submits it to a local HTTP fixture. It verifies the accepted settings,
+PBW, stable `uniqueKey`, Asia/Kolkata formatting and unchanged source amounts.
+Local tests do not add live evidence beyond the user's reported creation.

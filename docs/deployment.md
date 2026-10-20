@@ -45,13 +45,13 @@ secret manager. Never commit `.env`.
 | `EASYECOM_TIMEOUT` | `15s` | Per-attempt timeout for EasyEcom calls |
 | `VINCULUM_BASE_URL` | `https://erp.vineretail.com` | Vinculum eRetail host |
 | `VINCULUM_API_OWNER`, `VINCULUM_API_KEY` | | The two static headers every Vinculum call carries |
-| `VINCULUM_LOCATION` | | Default three-character `orderLocation`; a route's vendor reference overrides it |
+| `VINCULUM_LOCATION` | | Three-character `orderLocation`; BCPL staging uses confirmed `PBW`, and a route's vendor reference overrides it |
 | `VINCULUM_SELLABLE_BUCKET` | | Stock bucket the storefront may sell from; blank accepts every bucket |
 | `VINCULUM_TIMEOUT` | `20s` | Per-attempt timeout for Vinculum calls |
-| `VINCULUM_ORDER_TYPE_PREPAID`, `VINCULUM_ORDER_TYPE_COD` | | Confirmed tenant order types (`ODRTYPE`); the current order's mode must be configured |
-| `VINCULUM_PAYMENT_TYPE_PREPAID`, `VINCULUM_PAYMENT_TYPE_COD` | | Actual tenant payment methods for each payment mode; prepaid does not establish a card payment |
-| `VINCULUM_ORDER_STATUS` | | Confirmed initial tenant order status (`ODRSTS`) |
-| `VINCULUM_ORDER_TIMEZONE` | | Confirmed IANA timezone for create timestamps, e.g. `Asia/Kolkata` once verified |
+| `VINCULUM_ORDER_TYPE_PREPAID`, `VINCULUM_ORDER_TYPE_COD` | | BCPL prepaid setting: `Prepaid`; cash-on-delivery order type remains unverified |
+| `VINCULUM_PAYMENT_TYPE_PREPAID`, `VINCULUM_PAYMENT_TYPE_COD` | | BCPL prepaid setting: `COD`, accepted with `orderType=Prepaid`; the separate cash-on-delivery setting remains unverified |
+| `VINCULUM_ORDER_STATUS` | | BCPL staging setting: `Confirmed`, from the user-reported accepted request |
+| `VINCULUM_ORDER_TIMEZONE` | | BCPL staging setting: `Asia/Kolkata`, explicitly selected by the user |
 | `VINCULUM_ORDER_MODE` | | Optional item `mode`: `wms` or `dropship`; blank leaves the API default |
 | `VINCULUM_ORDER_TAX_INCLUSIVE` | | Optional `Yes` / `No`, only after confirming the source price basis |
 | `VINCULUM_ORDER_RATE_LIMIT` | `80` | Maximum order creations per window (Vinculum's documented ceiling) |
@@ -77,8 +77,11 @@ secret manager. Never commit `.env`.
 The worker uses Vinculum for order creation, inventory and dispatch. Missing
 order master values, status or timezone cause a local mapping failure before an
 order is submitted; read operations do not need these order settings. The checked
-in `.env.example` intentionally leaves tenant values blank. Existing deployments
-must configure them and restart the worker before creating new test orders.
+in `.env.example` carries the user-confirmed BCPL prepaid settings and staging
+timezone. Cash-on-delivery source-order settings remain blank until confirmed.
+The local `.env` has the same prepaid settings. Existing containers or hosts need
+these variables applied to their own environment and a worker restart before new
+test orders; editing `.env.example` does not change a running deployment.
 
 For staging verification, create a new order after deployment and configuration.
 Previously received workflows are outside this correction's scope; there is no

@@ -14,8 +14,9 @@ import (
 const DefaultCurrency = "INR"
 
 // OrderOptions tunes an order mapping.
-// TODO(VERIFY): obtain the tenant's ODRTYPE/ODRSTS values, payment methods and
-// timezone from BCPL. Public examples establish no production defaults.
+// User-reported BCPL success on 20 October 2026 establishes Prepaid/COD/Confirmed
+// for prepaid orders; Asia/Kolkata was explicitly chosen for staging.
+// TODO(VERIFY): confirm the cash-on-delivery order type and payment method.
 type OrderOptions struct {
 	// VendorName is stamped on each line's `vendor` field where the
 	// deployment uses it. Empty omits it.
@@ -64,6 +65,7 @@ func ToCreateOrder(o order.Order, route vendor.Route, opts OrderOptions) (dtoord
 		// must be stable across retries and resumes — it is the order's
 		// identity, not a generated reference.
 		OrderNo:       strings.TrimSpace(o.ExternalID),
+		UniqueKey:     strings.TrimSpace(o.ExternalID),
 		OrderLocation: strings.TrimSpace(route.VendorReference),
 		ReqType:       "create",
 		OrderType:     strings.TrimSpace(orderType),
@@ -130,9 +132,9 @@ func ToCreateOrder(o order.Order, route vendor.Route, opts OrderOptions) (dtoord
 
 // FormatOrderDate renders an order timestamp for Vinculum.
 //
-// TODO(VERIFY): confirm the configured timezone with the tenant. The official
-// example establishes the representation, not a timezone. Read endpoint dates
-// retain their independent formatter.
+// The user confirmed Asia/Kolkata for staging on 20 October 2026. The official
+// example establishes the representation, not a tenant timezone. Other
+// deployments must choose their own zone. Read dates retain their formatter.
 func FormatOrderDate(t time.Time, zone string) (string, error) {
 	if t.IsZero() {
 		return "", mappingErrorf("orderDate is required")

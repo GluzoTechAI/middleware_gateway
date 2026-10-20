@@ -6,12 +6,16 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gluzo/integration-gateway/app/apperror"
+	"github.com/gluzo/integration-gateway/app/config"
 	"github.com/gluzo/integration-gateway/app/domain/order"
+	"github.com/gluzo/integration-gateway/app/dotenv"
 	"github.com/gluzo/integration-gateway/app/integrations/vinculum"
 	"github.com/gluzo/integration-gateway/app/integrations/vinculum/mapper"
 )
@@ -81,6 +85,92 @@ func TestOrderWireContractPreservesTotalBillingAndTimezone(t *testing.T) {
 	}
 	if f.orderCalls.Load() != 0 {
 		t.Error("mapping called API")
+	}
+}
+
+// Exercise the deployable template through real config parsing and the adapter,
+// with sanitized customer data and a local HTTP server. This is the combination
+// the user reported creating a BCPL order on 20 October 2026, not an inferred
+// association between prepaid source orders and card payments.
+func TestBCPLPrepaidUsesAcceptedSettingsAndStableUniqueKey(t *testing.T) {
+	file, err := os.Open(filepath.Join("..", "..", "..", ".env.example"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	variables, err := dotenv.Parse(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{}
+	for _, variable := range variables {
+		env[variable.Key] = variable.Value
+	}
+	env["DATABASE_URL"] = "postgres://test:test@localhost:5432/test"
+	env["REDIS_URL"] = "redis://localhost:6379/0"
+	cfg, err := config.LoadFrom(func(key string) (string, bool) { value, ok := env[key]; return value, ok })
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := cfg.Vinculum
+	if c.CODOrderType != "" || c.CODPaymentType != "" {
+		t.Fatal("prepaid test must not establish COD settings")
+	}
+	f := newFakeVinculum(t)
+	client, err := vinculum.NewClient(vinculum.Config{
+		BaseURL: f.srv.URL, APIOwner: testOwner, APIKey: testKey, SellableBucket: "Good",
+		OrderOptions: vinculum.OrderOptions{PrepaidOrderType: c.PrepaidOrderType, PrepaidPaymentType: c.PrepaidPaymentType, InitialStatus: c.OrderStatus, Timezone: c.OrderTimezone},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, err := vinculum.NewVendor(client, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := sampleOrder()
+	o.ExternalID, o.PaymentMode, o.Currency, o.TotalAmount = "NEW-STAGING-1", order.PaymentPrepaid, "INR", 100
+	o.Items = []order.Item{{ExternalID: "source-line", SKU: "3562700373145", Quantity: 1, UnitPrice: 1049, TaxRate: 18}}
+	route := vendorRoute()
+	route.VendorReference = c.Location
+	ctx := context.Background()
+	doc, err := v.PrepareOrder(ctx, o, route)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var root map[string]any
+	if err = json.Unmarshal(doc, &root); err != nil {
+		t.Fatal(err)
+	}
+	head := requireOrderEnvelope(t, root)
+	for key, want := range map[string]string{"orderLocation": "PBW", "orderType": "Prepaid", "paymentType": "COD", "status": "Confirmed", "orderNo": o.ExternalID, "uniqueKey": o.ExternalID, "reqType": "create", "orderDate": "30/09/2026 17:00:00", "orderCurrency": "INR", "orderAmount": "100"} {
+		if head[key] != want {
+			t.Errorf("%s=%v, want %s", key, head[key], want)
+		}
+	}
+	line := head["items"].([]any)[0].(map[string]any)
+	if line["unitPrice"] != "1049" || line["orderQty"] != "1" || line["taxPercentage"] != "18" {
+		t.Fatalf("source prices or quantities changed: %+v", line)
+	}
+	repeat, err := v.PrepareOrder(ctx, o, route)
+	if err != nil || string(repeat) != string(doc) {
+		t.Fatalf("request changed across retries: %v", err)
+	}
+	ack, err := v.SubmitOrder(ctx, doc, o, route)
+	if err != nil || !ack.Created {
+		t.Fatalf("local vendor rejected corrected request: %+v %v", ack, err)
+	}
+	o.ExternalID = "NEW-STAGING-2"
+	second, err := v.PrepareOrder(ctx, o, route)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := decodePrepared(t, second).UniqueKey; got != o.ExternalID {
+		t.Fatalf("new order reused uniqueKey %q", got)
+	}
+	o.PaymentMode = order.PaymentCashOnDelivery
+	if _, err = v.PrepareOrder(ctx, o, route); err == nil {
+		t.Fatal("unverified cash-on-delivery settings were inferred")
 	}
 }
 

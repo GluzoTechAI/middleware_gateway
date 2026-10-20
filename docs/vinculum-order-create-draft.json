@@ -1,11 +1,12 @@
 {
   "order": {
     "orderLocation": "PBW",
-    "orderNo": "652487720",
+    "uniqueKey": "NEW_SOURCE_ORDER_ID",
+    "orderNo": "NEW_SOURCE_ORDER_ID",
     "reqType": "create",
-    "orderType": "CONFIRM_ORDER_TYPE",
-    "paymentType": "CONFIRM_PAYMENT_METHOD",
-    "status": "CONFIRM_INITIAL_STATUS",
+    "orderType": "Prepaid",
+    "paymentType": "COD",
+    "status": "Confirmed",
     "orderDate": "CONFIRM_DATE_DD/MM/YYYY_HH:mm:ss",
     "orderCurrency": "INR",
     "orderAmount": "CONFIRM_ORDER_TOTAL",

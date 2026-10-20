@@ -1,7 +1,7 @@
 // Package order holds Vinculum order contracts. Source: official v4 parameter
 // table and JSON example reviewed 19 October 2026; see the contract review.
-// TODO(VERIFY): tenant acceptance and address persistence still require a
-// recorded test order. Documentation alignment does not close BCPL item B17.
+// On 20 October 2026 the user reported successful BCPL creation using these
+// fields. TODO(VERIFY): read back the recipient fields before closing B17.
 package order
 
 import (
@@ -24,10 +24,12 @@ const (
 
 // CreateOrderRequest serializes inside the required outer order object.
 // orderAmount is the header total and items contains the lines.
-// TODO(VERIFY): the table calls orderAmount an array, contradicting its total
-// description and decimal-string example. Tenant acceptance remains pending.
+// The table calls orderAmount an array, contradicting its total description.
+// A decimal string matches both the example and the user's successful BCPL
+// test reported on 20 October 2026; the actual source total remains unchanged.
 type CreateOrderRequest struct {
 	OrderNo       string  `json:"orderNo"`
+	UniqueKey     string  `json:"uniqueKey,omitempty"`
 	OrderLocation string  `json:"orderLocation"`
 	ReqType       string  `json:"reqType"`
 	OrderType     string  `json:"orderType"`

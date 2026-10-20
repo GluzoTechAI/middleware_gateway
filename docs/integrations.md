@@ -280,7 +280,7 @@ they are wrong and asking again would only be told the same thing.
 | --- | --- | --- |
 | `GetWhInventory` | `POST /RestWS/api/eretail/v4/stock/getWhInventory` | Field names per the published specification |
 | `ShipmentDetail` | `POST /RestWS/api/eretail/v1/order/shipmentDetail` | Field names per the published specification |
-| `CreateOrder` | `POST /RestWS/api/eretail/v4/order/create` | Outer `order` object, `items` lines and documented contact fields; tenant acceptance remains unverified (B17). See [contract review](vinculum-order-create-review.md). |
+| `CreateOrder` | `POST /RestWS/api/eretail/v4/order/create` | Outer `order` object, `items` lines and documented contact fields; BCPL creation reported successful by the user on 20 October 2026; recipient read-back remains open (B17). See [contract review](vinculum-order-create-review.md). |
 
 ### Create orders use the published v4 envelope and acknowledgement
 
@@ -292,12 +292,20 @@ validated before HTTP when no `customerCode` is supplied. EasyEcom's distinct
 billing fields and `invoice_currency_code` are retained; missing contact data can
 still come from the matching webhook. Selling price is never invented as MRP.
 
-`reqType=create` and the original order number remain stable on retries. Create
+`uniqueKey` equals `orderNo`, using the source order identifier from the accepted
+BCPL example. Both identifiers and `reqType=create` remain stable on retries. Create
 responses must contain a successful `requestStatus` and an `outputKey` or
 `dsOrderNo`; a successful HTTP status alone cannot complete the workflow.
 Duplicate rejections retain the existing configured-code/keyword handling. That
 path reports the source order reference because it does not return a generated
 WMS identifier; tenant duplicate behaviour still requires verification (B18).
+
+The user-reported successful BCPL request on 20 October 2026 establishes location
+`PBW`, prepaid `orderType=Prepaid`, prepaid `paymentType=COD`, and initial
+`status=Confirmed`. Preserve that accepted `paymentType` literal even for a
+prepaid source order. The user confirmed `Asia/Kolkata` for staging. These are
+explicit `.env` / `.env.example` settings; cash-on-delivery source-order values
+remain unverified and separately configurable.
 
 Staging verification uses newly created orders after configuration and worker
 restart. This correction does not migrate previously prepared order requests.
@@ -350,13 +358,13 @@ others, so the `dto.Flex*` types accept both.
 | `reqType`, `filterBy`, `fulfillmentLocation`, `status[]` | Documented parameters with no published value set. Passed through when set, omitted when not, so a value BCPL supply later needs no code change. |
 | Sellable `bucket` value | BCPL open item 2. Blank accepts every bucket, which is right for reading and wrong for pushing. Phase 4 requires it. |
 | `qty` versus `committedQty` | Assumption A1. See below. |
-| The `ship*` address field names | Not enumerated in the specification. The nine fields follow the documented prefix. **This is the one unverified item here that fails quietly** — Vinculum would accept an order and ship it with a field missing. |
+| Shipping/billing persistence | Names match the documented fields and a user-reported accepted BCPL request (20 October 2026). Verify recipient read-back before closing B17. |
 | The duplicate-order rejection | The specification states that a duplicate is rejected but gives neither code nor wording. Matched by keyword, overridable with `VINCULUM_DUPLICATE_ORDER_CODES`. Failing to recognise one is safe: the run fails visibly and the vendor did the rejecting, so nothing is duplicated. |
-| `orderType`, `paymentType`, initial status and timezone | Explicit deployment settings, with no guessed defaults. Order types come from tenant master data. Missing settings fail mapping before HTTP. |
+| `orderType`, `paymentType`, initial status and timezone | Prepaid `Prepaid` / `COD` / `Confirmed` and staging timezone `Asia/Kolkata` are configured from user confirmation on 20 October 2026. Cash-on-delivery source-order settings remain blank. Missing settings for the current payment mode fail before HTTP. |
 
-Test payloads under `app/integrations/vinculum/mapper/testdata/` are built
-from the specification, not captured from BCPL: no test credentials have been
-issued (open item 5).
+Generic payloads under `app/integrations/vinculum/mapper/testdata/` are built
+from the specification. The user-reported accepted BCPL request and remaining
+response/address checks are recorded in the [contract review](vinculum-order-create-review.md).
 
 ### The sellable quantity, and why it is one expression
 
