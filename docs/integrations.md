@@ -342,7 +342,10 @@ would read a rejection as a successful empty page. Envelope errors are
 conditions arrive as 5xx and are retried by the HTTP client.
 
 For create orders, `requestStatus.status`, `errorCode` and `errorDesc` are also
-checked, and missing vendor identifiers are rejected.
+checked, and missing vendor identifiers are rejected. If a nonzero outer envelope
+only says `Generic Error`, nested `errorDesc` is included in the surfaced error
+while preserving the outer code and message. The user-reported response code 9
+with a non-MarketPlace primary vendor is covered by a regression test.
 
 Numbers arrive as JSON numbers in some fields and as quoted strings in
 others, so the `dto.Flex*` types accept both.

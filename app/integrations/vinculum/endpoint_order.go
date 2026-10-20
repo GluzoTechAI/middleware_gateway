@@ -52,7 +52,21 @@ func (c *Client) CreateOrder(ctx context.Context, req dtoorder.CreateOrderReques
 	if err := c.post(ctx, createOrderPath, op, req, &resp); err != nil {
 		return nil, err
 	}
-	if err := checkEnvelope(op, resp.Envelope); err != nil {
+	// A nonzero envelope code can say only "Generic Error" while requestStatus
+	// identifies the rejected SKU or tenant configuration. Keep the outer code
+	// and generic message, but include the actionable nested rejection as well.
+	envelope := resp.Envelope
+	if resp.RequestStatus != nil {
+		if detail := strings.TrimSpace(resp.RequestStatus.ErrorDesc); detail != "" {
+			message := strings.TrimSpace(envelope.ResponseMessage)
+			if message == "" {
+				envelope.ResponseMessage = detail
+			} else if message != detail {
+				envelope.ResponseMessage = message + ": " + detail
+			}
+		}
+	}
+	if err := checkEnvelope(op, envelope); err != nil {
 		return nil, err
 	}
 	if resp.RequestStatus == nil {

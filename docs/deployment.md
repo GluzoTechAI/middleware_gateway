@@ -83,6 +83,41 @@ The local `.env` has the same prepaid settings. Existing containers or hosts nee
 these variables applied to their own environment and a worker restart before new
 test orders; editing `.env.example` does not change a running deployment.
 
+### Optional order settings must remain empty for the accepted BCPL request
+
+The accepted BCPL request omitted both fields. Use truly empty assignments:
+
+```dotenv
+VINCULUM_ORDER_MODE=
+VINCULUM_ORDER_TAX_INCLUSIVE=
+```
+
+Configuration accepts casing such as `dropship` / `yes` and converts it to the
+documented wire values `dropship` / `Yes`. Empty settings omit the JSON fields.
+Unknown values fail configuration loading with the variable name, before any
+order is processed. Comments belong on separate lines in deployment env files;
+the parser tolerates inline comments only for these two non-secret enums.
+
+The 20 October 2026 rejection for order `652797307` returned `responseCode=9`,
+`responseMessage="Generic Error"` and nested `errorDesc="SKU [BPIN00043237]
+Primary vendor is not MarketPlace type"`. Explicit `mode=dropship` selected a
+different path from the accepted request, which omitted mode (the documented
+WMS path). The gateway now includes that nested rejection in its error message.
+Keep mode blank for the accepted BCPL flow. Enabling the separate dropship path
+requires BCPL to confirm compatible vendor master configuration. Do not infer
+that API mode from the commercial fulfilment arrangement.
+
+For Compose, update the staging environment and recreate the existing gateway
+container to load changed variables; restarting the same container retains its
+previous environment:
+
+```sh
+docker compose up -d --no-deps --force-recreate gateway
+```
+
+Deploy the code update through the usual build first, then create a fresh staging
+order and verify its outgoing item omits `mode` and `taxInclusive`.
+
 For staging verification, create a new order after deployment and configuration.
 Previously received workflows are outside this correction's scope; there is no
 legacy prepared-request migration. See [the implementation and tenant verification

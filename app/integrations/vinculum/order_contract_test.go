@@ -3,6 +3,7 @@ package vinculum_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -149,6 +150,11 @@ func TestBCPLPrepaidUsesAcceptedSettingsAndStableUniqueKey(t *testing.T) {
 		}
 	}
 	line := head["items"].([]any)[0].(map[string]any)
+	for _, key := range []string{"mode", "taxInclusive"} {
+		if _, present := line[key]; present {
+			t.Errorf("accepted BCPL template must omit unconfirmed %s", key)
+		}
+	}
 	if line["unitPrice"] != "1049" || line["orderQty"] != "1" || line["taxPercentage"] != "18" {
 		t.Fatalf("source prices or quantities changed: %+v", line)
 	}
@@ -244,6 +250,44 @@ func TestCreateOrderRequiresSuccessfulAcknowledgementAndVendorID(t *testing.T) {
 			}
 			if err != nil || ack.VendorOrderID != tc.wantID {
 				t.Fatalf("ack=%+v err=%v", ack, err)
+			}
+		})
+	}
+}
+
+func TestGenericCreateErrorIncludesNestedVendorRejection(t *testing.T) {
+	const detail = "SKU [BPIN00043237] Primary vendor is not MarketPlace type"
+	for _, outer := range []string{"Generic Error", "", detail} {
+		t.Run("outer="+outer, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]any{"responseCode": 9, "responseMessage": outer, "requestStatus": map[string]any{"status": "Error", "errorDesc": detail, "errorCode": nil, "outputKey": nil, "requestKey": "652797307"}})
+			}))
+			defer srv.Close()
+			c, err := vinculum.NewClient(vinculum.Config{BaseURL: srv.URL, APIOwner: testOwner, APIKey: testKey, SellableBucket: "Good", OrderOptions: testOrderOptions()})
+			if err != nil {
+				t.Fatal(err)
+			}
+			v, err := vinculum.NewVendor(c, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			o := sampleOrder()
+			doc, err := v.PrepareOrder(context.Background(), o, vendorRoute())
+			if err != nil {
+				t.Fatal(err)
+			}
+			ack, err := v.SubmitOrder(context.Background(), doc, o, vendorRoute())
+			var apiErr *apperror.Error
+			if !errors.As(err, &apiErr) || apiErr.Category != apperror.ExternalAPI || apiErr.ExternalCode != "9" || apiErr.Operation != "CreateOrder" || apiErr.Retryable || ack.Created {
+				t.Fatalf("rejection lost: %+v %+v %v", ack, apiErr, err)
+			}
+			want := detail
+			if outer != "" && outer != detail {
+				want = outer + ": " + detail
+			}
+			if apiErr.ExternalMessage != want || !strings.Contains(err.Error(), detail) {
+				t.Fatalf("nested detail hidden: %v (%q)", err, apiErr.ExternalMessage)
 			}
 		})
 	}

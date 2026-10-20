@@ -35,6 +35,42 @@ func TestVinculumOrderSettingsRequireExplicitTenantConfiguration(t *testing.T) {
 	}
 }
 
+func TestOptionalVinculumSettingsNormalizeAtConfigurationBoundary(t *testing.T) {
+	base := map[string]string{"DATABASE_URL": "postgres://test:test@localhost/test", "REDIS_URL": "redis://localhost:6379/0"}
+	for _, tt := range []struct{ name, mode, tax, wantMode, wantTax, wantErr string }{
+		{name: "unset"},
+		{name: "blank", mode: " \t ", tax: " \t "},
+		{name: "comments only", mode: " # optional: wms or dropship", tax: " # optional: Yes or No"},
+		{name: "reported staging settings", mode: "dropship", tax: "yes", wantMode: "dropship", wantTax: "Yes"},
+		{name: "mixed case", mode: "  DrOpShIp  ", tax: "  yEs  ", wantMode: "dropship", wantTax: "Yes"},
+		{name: "wms with excluded tax", mode: "WMS", tax: "no", wantMode: "wms", wantTax: "No"},
+		{name: "inline comments", mode: "wms # mode", tax: "No\t# price basis", wantMode: "wms", wantTax: "No"},
+		{name: "invalid mode", mode: "warehouse", wantErr: "VINCULUM_ORDER_MODE"},
+		{name: "invalid tax flag", tax: "true", wantErr: "VINCULUM_ORDER_TAX_INCLUSIVE"},
+		{name: "hash within value", mode: "wms#invalid", wantErr: "VINCULUM_ORDER_MODE"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			env := merge(base, map[string]string{"VINCULUM_ORDER_MODE": tt.mode, "VINCULUM_ORDER_TAX_INCLUSIVE": tt.tax, "VINCULUM_API_KEY": "keep # literal credential"})
+			cfg, err := config.LoadFrom(lookupFrom(env))
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("expected %s: %v", tt.wantErr, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.Vinculum.OrderMode != tt.wantMode || cfg.Vinculum.OrderTaxInclusive != tt.wantTax {
+				t.Fatalf("got %q/%q, want %q/%q", cfg.Vinculum.OrderMode, cfg.Vinculum.OrderTaxInclusive, tt.wantMode, tt.wantTax)
+			}
+			if cfg.Vinculum.APIKey != "keep # literal credential" {
+				t.Fatal("enum handling changed a credential")
+			}
+		})
+	}
+}
+
 func merge(base map[string]string, extra map[string]string) map[string]string {
 	out := make(map[string]string, len(base)+len(extra))
 	for k, v := range base {

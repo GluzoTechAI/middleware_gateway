@@ -52,6 +52,28 @@ The following review tables describe the earlier rejected request and explain
 the implementation choices; the staging confirmation above supersedes their
 previously open prepaid-master and amount-representation questions.
 
+## The later rejection identified an incompatible dropship vendor
+
+On 20 October 2026 the user supplied the failed request and complete response for
+order `652797307`. The outer message was `Generic Error` (`responseCode=9`), while
+`requestStatus.errorDesc` said `SKU [BPIN00043237] Primary vendor is not MarketPlace
+type`. The request added item `mode=dropship` and `taxInclusive=Yes`, absent from
+the previously accepted request. The rendered official v4 response documentation
+distinguishes WMS creation (mode omitted, empty or `wms`) from dropship creation.
+
+The response identifies the primary vendor configuration for the dropship path;
+it does not identify billing, amount precision or SKU translation as the cause.
+Restore both optional settings to blank to reproduce the accepted request shape.
+BCPL must confirm its vendor configuration before enabling API dropship mode;
+`taxInclusive` also remains omitted until the source price basis is established.
+The local `.env` and template now leave both blank. No tenant master data is
+changed, and no live create call is made by this correction.
+
+The gateway now includes nested `errorDesc` in nonzero-envelope errors while
+retaining the outer response code/message. Regression coverage reproduces the
+reported response and confirms that unknown optional settings fail during config
+loading, case variations are normalized, and absent fields remain omitted.
+
 ## The missing outer order object explains the first field rejection
 
 The official v4 JSON example has this structure:

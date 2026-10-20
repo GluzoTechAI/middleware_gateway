@@ -326,8 +326,8 @@ func LoadFrom(lookup Lookup) (*Config, error) {
 			CODPaymentType:     r.str("VINCULUM_PAYMENT_TYPE_COD", ""),
 			OrderStatus:        r.str("VINCULUM_ORDER_STATUS", ""),
 			OrderTimezone:      r.str("VINCULUM_ORDER_TIMEZONE", ""),
-			OrderMode:          r.str("VINCULUM_ORDER_MODE", ""),
-			OrderTaxInclusive:  r.str("VINCULUM_ORDER_TAX_INCLUSIVE", ""),
+			OrderMode:          r.optionalEnum("VINCULUM_ORDER_MODE", "wms", "dropship"),
+			OrderTaxInclusive:  r.optionalEnum("VINCULUM_ORDER_TAX_INCLUSIVE", "Yes", "No"),
 			BaseURL:            r.str("VINCULUM_BASE_URL", "https://erp.vineretail.com"),
 			APIOwner:           r.str("VINCULUM_API_OWNER", ""),
 			APIKey:             r.str("VINCULUM_API_KEY", ""),
@@ -476,6 +476,30 @@ func (r *reader) str(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// optionalEnum reads a non-secret setting whose blank value means omission.
+// Some external env-file loaders preserve inline comments as literal values.
+// Only these constrained settings strip comments and normalize case; general
+// strings such as credentials retain their contents, including '#' characters.
+func (r *reader) optionalEnum(key string, allowed ...string) string {
+	v := r.str(key, "")
+	for i := range len(v) {
+		if v[i] == '#' && (i == 0 || v[i-1] == ' ' || v[i-1] == '\t') {
+			v = strings.TrimSpace(v[:i])
+			break
+		}
+	}
+	if v == "" {
+		return ""
+	}
+	for _, candidate := range allowed {
+		if strings.EqualFold(v, candidate) {
+			return candidate
+		}
+	}
+	r.errs = append(r.errs, fmt.Errorf("%s must be blank or one of: %s", key, strings.Join(allowed, ", ")))
+	return ""
 }
 
 // list reads a comma-separated value into a slice, dropping blanks. Absent
